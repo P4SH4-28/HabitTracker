@@ -1,0 +1,16 @@
+{
+  "name": "habittracker-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Habit Tracker arkadaşlık + liderlik sunucusu (Express + libSQL)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node test.mjs"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.15.6",
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  }
+}

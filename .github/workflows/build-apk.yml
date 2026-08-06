@@ -1,0 +1,58 @@
+name: Android APK Build
+
+# İş akışının ne zaman otomatik tetikleneceğini belirliyoruz
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch: # GitHub arayüzünden manuel "Çalıştır" butonu ekler
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. ADIM: Depodaki proje kodlarını sanal sunucuya çekiyoruz
+      - name: Kodları Çek (Checkout)
+        uses: actions/checkout@v4
+
+      # 2. ADIM: Node.js ortamını ayarlıyoruz
+      - name: Node.js Ortamını Kur
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      # 3. ADIM: React Native için gerekli Java (JDK 17) ortamını kuruyoruz
+      - name: Java JDK 17 Kur
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      # 4. ADIM: Android SDK araçlarını yüklüyoruz
+      - name: Android SDK Kur
+        uses: android-actions/setup-android@v3
+
+      # 5. ADIM: Proje bağımlılıklarını yüklüyoruz
+      - name: Paketleri Yükle (npm install)
+        run: npm ci
+
+      # 6. ADIM: Expo yapısını yerel Android klasörüne dönüştürüyoruz
+      - name: Expo Prebuild Oluştur
+        run: npx expo prebuild --platform android
+
+      # 7. ADIM: Gradle kullanarak APK dosyasını derliyoruz
+      - name: APK Derle (Gradle)
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      # 8. ADIM: Oluşan APK'yı GitHub Actions sekmesine indirme linki olarak yüklüyoruz
+      - name: APK Dosyasını Kaydet (Artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: HabitTracker-App-Release
+          path: android/app/build/outputs/apk/release/app-release.apk
