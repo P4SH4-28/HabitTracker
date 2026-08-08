@@ -9,7 +9,7 @@
 //   Gelişim verilerine bakabilir ve arkadaşlık isteği gönderebilirsin.
 // ============================================================
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import PlayerProfileModal from '../components/PlayerProfileModal';
 import { FrameDecor } from '../components/AvatarCircle';
 import { useAuth } from '../context/AuthContext';
@@ -24,7 +24,7 @@ const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
 const PODIUM_COLORS = { 1: '#FFD75E', 2: '#C0C8D8', 3: '#D98E5A' };
 
 export default function LeaderboardScreen() {
-  const { data, today, leaderboardMinLevel, leaderboardMinXp, refreshServer } = useData();
+  const { data, today, leaderboardMinLevel, leaderboardMinXp, refreshServer, refreshing } = useData();
   const { user: authUser } = useAuth();
   const { colors: C } = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
@@ -48,6 +48,20 @@ export default function LeaderboardScreen() {
 
   // Arkadaşları id'ye göre hızlıca bulmak için bir küme (set).
   const friendIds = useMemo(() => new Set(friends.map((f) => f.id)), [friends]);
+
+  // Çek-yenile: canlı liderlik verisi + sunucu senkronu.
+  const onRefresh = useCallback(() => {
+    loadLive();
+    refreshServer();
+  }, [loadLive, refreshServer]);
+
+  const refreshProps = {
+    refreshing,
+    onRefresh,
+    tintColor: C.primary,
+    colors: [C.primary],
+    progressBackgroundColor: C.surface,
+  };
 
   // Sıralama: canlı veri varsa (sen + arkadaşların) kullanılır;
   // yoksa önbellekteki sunucu listesi + arkadaşlar gösterilir.
@@ -96,7 +110,11 @@ export default function LeaderboardScreen() {
     const pct = Math.min(100, (stats.totalXp / leaderboardMinXp) * 100);
     return (
       <View style={styles.container}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl {...refreshProps} />}
+        >
           <Text style={styles.screenTitle}>Liderlik</Text>
           <Text style={styles.screenSub}>Arkadaşlarınla rekabet et</Text>
 
@@ -133,7 +151,11 @@ export default function LeaderboardScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl {...refreshProps} />}
+      >
         <Text style={styles.screenTitle}>Liderlik</Text>
         <Text style={styles.screenSub}>Herkes burada — profillere dokunarak göz at</Text>
 
@@ -293,7 +315,7 @@ function makeStyles(C) {
       paddingVertical: 8,
     },
     retryText: {
-      color: '#FFFFFF',
+      color: C.onPrimary,
       fontSize: 12,
       fontWeight: '800',
     },

@@ -204,6 +204,51 @@ export const DAILY_XP_CAP = 500;
 export const DAILY_GOLD_CAP = 150;
 export const MAX_ACTIVE_HABITS = 10;
 
+// ---------- XP Kumbarası ----------
+// Günlük 500 XP tavanına takılan kazançların YANMAMASI için:
+// - Tavanı aşan kısım kumbarada (stats.xpBank) birikir.
+// - Her gün bankadan en fazla XP_BANK_DAILY_RELEASE kadar XP "azar azar"
+//   boşaltılır; boşaltım taze kazanca EK olur (ayrı sayaç: day.bankReleased).
+// - Kumbara üst sınırı vardır (XP_BANK_MAX) — farm koruması bozulmaz.
+// - Seri bonusu ve düello ödülleri tavandan MUAFTIR (doğrudan verilir).
+export const XP_BANK_DAILY_RELEASE = 500;
+export const XP_BANK_MAX = 5000;
+
+// Günlük sayaç şablonu: yeni güne geçince tüm sayaçlar sıfırlanır.
+// day = { key, completions, pomodoro, goldEarned, xpEarned, bankReleased }.
+export function emptyDayCounter(key) {
+  return { key, completions: 0, pomodoro: 0, goldEarned: 0, xpEarned: 0, bankReleased: 0 };
+}
+
+// Bir XP kazancına kumbara kuralını uygular (SAF fonksiyon).
+// amount: eylemin tavana bakılmaksızın kazandırdığı ham XP.
+// day: günün sayaçları (key "today" ile eşleşmeli, kullanıcı güncelliğini
+//      kendi sağlar). bank: kumbara bakiyesi.
+// Dönüş: { day, bank, freshXp, releaseXp, overflow, totalXpGain } —
+//   freshXp   : tavan içinde verilen taze XP (xpEarned'e işlenir)
+//   overflow  : tavanı aşan, kumbaraya eklenen XP (yanmaz)
+//   releaseXp : kumbaradan günlük boşaltım sınırı içinde verilen XP
+//   totalXpGain = freshXp + releaseXp (toplam X eksenine eklenecek).
+export function applyXpWithBank(day, bank, amount) {
+  const capLeft = Math.max(0, DAILY_XP_CAP - (day.xpEarned || 0));
+  const freshXp = Math.min(amount, capLeft);
+  const overflow = Math.max(0, amount - freshXp);
+  const releaseLeft = Math.max(0, XP_BANK_DAILY_RELEASE - (day.bankReleased || 0));
+  const releaseXp = Math.min(bank, releaseLeft);
+  return {
+    day: {
+      ...day,
+      xpEarned: (day.xpEarned || 0) + freshXp,
+      bankReleased: (day.bankReleased || 0) + releaseXp,
+    },
+    bank: Math.min(XP_BANK_MAX, Math.max(0, bank - releaseXp) + overflow),
+    freshXp,
+    releaseXp,
+    overflow,
+    totalXpGain: freshXp + releaseXp,
+  };
+}
+
 // ---------- Seri (streak) ödülleri ----------
 // Belirli seri eşiklerine ulaşan alışkanlık, günlük tamamlama ödülüne ek
 // olarak BONUS XP + altın kazandırır. Eşik başına yalnızca BİR kez ödenir

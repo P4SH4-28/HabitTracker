@@ -9,7 +9,7 @@
 // otomatik yeni güne geçer (bayat "bugün" durumu yaşanmaz).
 // ============================================================
 import { useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import AddHabitModal from '../components/AddHabitModal';
 import AvatarCircle from '../components/AvatarCircle';
@@ -26,7 +26,8 @@ import { useTheme } from '../theme';
 export default function HomeScreen() {
   const { colors: C } = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
-  const { data, today, toggleHabit, deleteHabit, addHabit } = useData();
+  const { data, today, toggleHabit, deleteHabit, addHabit, refreshServer, refreshing } =
+    useData();
   const navigation = useNavigation();
   const { habits, stats, settings } = data;
   // Seviye bilgisi toplam XP'den türetilir (bkz. logic.js).
@@ -138,6 +139,16 @@ export default function HomeScreen() {
         ListHeaderComponent={header}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        // Çek-yenile: sunucuyla senkron (profil + arkadaş + liderlik + görevler).
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => refreshServer()}
+            tintColor={C.primary}
+            colors={[C.primary]}
+            progressBackgroundColor={C.surface}
+          />
+        }
         ListEmptyComponent={
           <View style={styles.emptyBox}>
             <Text style={styles.emptyEmoji}>🌱</Text>

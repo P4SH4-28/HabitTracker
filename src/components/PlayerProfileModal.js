@@ -166,7 +166,7 @@ export default function PlayerProfileModal({ player, onClose }) {
                 disabled={sending}
               >
                 {sending ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <ActivityIndicator size="small" color={C.onPrimary} />
                 ) : (
                   <Text style={styles.actionText}>
                     {sendResult ? (sendResult.ok ? '✓ ' : '') + sendResult.text : '+ İstek Gönder'}

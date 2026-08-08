@@ -167,7 +167,7 @@ function makeStyles(C) {
       paddingVertical: 8,
     },
     acceptText: {
-      color: '#FFFFFF',
+      color: C.onPrimary,
       fontSize: 12,
       fontWeight: '800',
     },

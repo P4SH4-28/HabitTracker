@@ -15,18 +15,21 @@ import {
 } from 'react';
 import { AppState } from 'react-native';
 import {
+  applyXpWithBank,
   calcStreak,
   DAILY_GOLD_CAP,
   DAILY_XP_CAP,
   dateKey,
   dayPenalty,
+  emptyDayCounter,
+  formatDuration,
   levelFromTotalXp,
   MAX_ACTIVE_HABITS,
   POMODORO_DURATION_MS,
   streakBonusFor,
   todayKey,
 } from '../logic';
-import { loadServerClock, serverNow } from '../services/serverClock';
+import { isClockFresh, isClockTampered, loadServerClock, serverNow } from '../services/serverClock';
 import { evaluateAchievements } from '../data/achievements';
 import {
   bumpDay,
@@ -60,15 +63,38 @@ import {
   getMyDuels,
 } from '../services/duelService';
 import { getLeaderboardData } from '../services/leaderboardService';
-import { getServerProfile, updateProfileData } from '../services/profileService';
+import { claimQuestServer, getServerProfile, updateProfileData } from '../services/profileService';
 
-// Ana depolama anahtarı. Veriye "version" alanı ekliyoruz; ileride
-// veri yapısı değişirse eski verileri migrasyonla dönüştürebileceğiz.
-const STORAGE_KEY = '@habit_tracker_v2';
-const BACKUP_KEY = '@habit_tracker_v2_backup';
-const USER_BACKUP_KEY = '@habit_tracker_v2_user_backup';
-const SERVER_CACHE_KEY = '@habit_tracker_v2_server_cache';
+// Depolama anahtarları HESABA ÖZELDİR: her hesabın verisi kendi anahtarında
+// saklanır; hesap değişince veri de değişir. "name" önce güvenli hale getirilir
+// (AsyncStorage anahtarı sadece harf/rakam/alt çizgi içermelidir).
+// Eski ortak anahtar (@habit_tracker_v2) ilk açılışta aktif hesaba taşınır.
+const LEGACY_STORAGE_KEY = '@habit_tracker_v2';
+const LAST_ACCOUNT_KEY = '@habit_tracker_v2_last_account';
 const DATA_VERSION = 7;
+
+function sanitizeName(name) {
+  const s = String(name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return s || 'varsayilan';
+}
+function storageKeyFor(name) {
+  return `${LEGACY_STORAGE_KEY}_${sanitizeName(name)}`;
+}
+function backupKeyFor(name) {
+  return `${LEGACY_STORAGE_KEY}_backup_${sanitizeName(name)}`;
+}
+function userBackupKeyFor(name) {
+  return `${LEGACY_STORAGE_KEY}_user_backup_${sanitizeName(name)}`;
+}
+function serverCacheKeyFor(name) {
+  return `${LEGACY_STORAGE_KEY}_server_cache_${sanitizeName(name)}`;
+}
+function syncAnchorKeyFor(name) {
+  return `${LEGACY_STORAGE_KEY}_sync_anchor_${sanitizeName(name)}`;
+}
 
 // Gün içinde tamamlanmayan her görev için kesilen altın miktarı.
 const PENALTY_COINS = 15;
@@ -81,9 +107,11 @@ const INITIAL_STATE = {
     pomodoroCount: 0,
     gold: 0,
     // Günlük görev sayaçları: gün anahtarı değişince sıfırlanır (bkz. quests.js).
-    day: { key: null, completions: 0, pomodoro: 0, goldEarned: 0 },
+    day: { key: null, completions: 0, pomodoro: 0, goldEarned: 0, bankReleased: 0 },
     // Seri ödülü: alışkanlık başına en son ödüllenen seri eşiği (farm koruması).
     streakAwards: {},
+    // XP KUMBARASI: günlük tavanı aşan XP burada birikir, günde 500'e kadar geri verilir.
+    xpBank: 0,
   },
     settings: { xpPerHabit: 25, pomodoroXp: 50, avatarId: 'av_fox', themeId: 'dark', devOffset: 0, frameId: null, penaltyEnabled: true, reminderHour: null, osNotify: false },
   friends: [],
@@ -141,7 +169,7 @@ export function DataProvider({ children }) {
   const settingsRef = useRef(INITIAL_STATE.settings);
   // dataRef: senkron motoru en güncel veriyle çalışsın diye ayna.
   const dataRef = useRef(INITIAL_STATE);
-  const { user: authUser, status: authStatus } = useAuth();
+  const { user: authUser, status: authStatus, ready: authReady } = useAuth();
   // authRef: memo'lu callback'ler bayat isim tutmasın diye ayna.
   const authRef = useRef(authUser);
   useEffect(() => {
@@ -184,144 +212,221 @@ export function DataProvider({ children }) {
   // Delta senkron köprüsü (Katman 3): sunucunun onayladığı son toplamlar.
   // Bir sonraki sync'in deltası BUNLARDAN hesaplanır; mutlak değer değil
   // yalnızca fark sunucuya gönderilir (saat/veri oynatma koruması).
-  // Ayrı anahtarda saklanır; sunucu önbelleğinden bağımsızdır.
-  const SYNC_ANCHOR_KEY = '@habit_tracker_v2_sync_anchor';
-  const syncAnchorRef = useRef({ initialized: false, lastSyncedXp: 0, lastSyncedGold: 0 });
-  useEffect(() => {
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(SYNC_ANCHOR_KEY);
-        if (raw) {
-          const a = JSON.parse(raw);
-          if (a && typeof a.lastSyncedXp === 'number' && typeof a.lastSyncedGold === 'number') {
-            syncAnchorRef.current = {
-              initialized: true,
-              lastSyncedXp: a.lastSyncedXp,
-              lastSyncedGold: a.lastSyncedGold,
-            };
-          }
-        }
-      } catch (e) {
-        console.warn('Senkron köprüsü okunamadı:', e);
-      }
-    })();
-  }, []);
-  useEffect(() => {
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(SERVER_CACHE_KEY);
-        if (raw) {
-          const c = JSON.parse(raw);
-          if (c && Array.isArray(c.leaderboard)) {
-            serverCacheRef.current = c;
-            setServer((s) => ({
-              ...s,
-              leaderboard: c.leaderboard,
-              friends: Array.isArray(c.friends) ? c.friends : [],
-              requests: Array.isArray(c.requests) ? c.requests : [],
-              lastSync: c.savedAt || null,
-            }));
-            setData((d) => ({
-              ...d,
-              players: c.leaderboard,
-              friends: Array.isArray(c.friends) ? c.friends : d.friends,
-            }));
-          }
-        }
-      } catch (e) {
-        console.warn('Sunucu önbelleği okunamadı:', e);
-      }
-    })();
-  }, []);
+  // Hesaba özel anahtarda saklanır; sunucu önbelleğinden bağımsızdır.
+  const syncAnchorRef = useRef({
+    initialized: false,
+    lastSyncedXp: 0,
+    lastSyncedGold: 0,
+    lastSyncedBank: 0,
+  });
 
-  // ---------- Yükleme: uygulama açılışında kayıtlı veriyi geri yükle ----------
+  // ---------- Hesap çözümleme ----------
+  // Veri, önbellek ve senkron köprüsü AKTİF HESABA özeldir. Aktif hesap:
+  // oturum açıkken authUser adıdır; oturum yoksa son bilinen hesaptır
+  // (giriş ekranı o hesabın verisini önizler). authReady olmadan yüklenmez.
+  const [activeAccount, setActiveAccount] = useState(null);
+  const lastAccountRef = useRef(null);
+
   useEffect(() => {
+    if (!authReady) return;
+    let cancelled = false;
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
+        const raw = await AsyncStorage.getItem(LAST_ACCOUNT_KEY);
+        if (raw) lastAccountRef.current = raw;
+      } catch (e) {
+        // Okunamadı: son hesap bilinmiyor demektir.
+      }
+      let next = 'varsayilan';
+      if (authUser?.name) {
+        next = authUser.name;
+        // Hesap değiştirme sonrası giriş ekranı da o hesabı önizlesin.
+        AsyncStorage.setItem(LAST_ACCOUNT_KEY, authUser.name).catch(() => {});
+      } else if (authStatus === 'login') {
+        next = lastAccountRef.current || 'varsayilan';
+      }
+      if (!cancelled) setActiveAccount(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, authUser?.name, authStatus]);
+
+  // ---------- Yükleme: aktif hesabın verisi + önbellek + köprü + yedek ----------
+  // Hesap değişince (çıkış → başka hesapla giriş) veri yeniden yüklenir.
+  // Eski ortak anahtar (@habit_tracker_v2) yalnızca İLK hesaba taşınır (bir kez).
+  useEffect(() => {
+    if (!authReady || !activeAccount) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setData(INITIAL_STATE);
+      setBackupTs(null);
+      serverCacheRef.current = null;
+      setServer((s) => ({
+        ...s,
+        connected: false,
+        leaderboard: [],
+        friends: [],
+        requests: [],
+        duels: [],
+        banned: false,
+        banReason: null,
+      }));
+      const dataKey = storageKeyFor(activeAccount);
+      const cacheKey = serverCacheKeyFor(activeAccount);
+      const anchorKey = syncAnchorKeyFor(activeAccount);
+      const backupKey = userBackupKeyFor(activeAccount);
+      try {
+        // Senkron köprüsü: bu hesabın son onaylı toplamları.
+        try {
+          const raw = await AsyncStorage.getItem(anchorKey);
+          if (raw) {
+            const a = JSON.parse(raw);
+            if (a && typeof a.lastSyncedXp === 'number' && typeof a.lastSyncedGold === 'number') {
+              syncAnchorRef.current = {
+                initialized: true,
+                lastSyncedXp: a.lastSyncedXp,
+                lastSyncedGold: a.lastSyncedGold,
+                lastSyncedBank: a.lastSyncedBank || 0,
+              };
+            }
+          }
+        } catch (e) {
+          console.warn('Senkron köprüsü okunamadı:', e);
+        }
+        // Sunucu önbelleği: liderlik/arkadaş/istek görüntüsü.
+        try {
+          const raw = await AsyncStorage.getItem(cacheKey);
+          if (raw) {
+            const c = JSON.parse(raw);
+            if (c && Array.isArray(c.leaderboard)) {
+              serverCacheRef.current = c;
+              if (!cancelled) {
+                setServer((s) => ({
+                  ...s,
+                  leaderboard: c.leaderboard,
+                  friends: Array.isArray(c.friends) ? c.friends : [],
+                  requests: Array.isArray(c.requests) ? c.requests : [],
+                  lastSync: c.savedAt || null,
+                }));
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('Sunucu önbelleği okunamadı:', e);
+        }
+        // Kullanıcı yedeği zamanı ("Son yedek" bilgisi).
+        try {
+          const raw = await AsyncStorage.getItem(backupKey);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && parsed.ts) setBackupTs(parsed.ts);
+          }
+        } catch (e) {
+          console.warn('Yedek bilgisi okunamadı:', e);
+        }
+        // Kullanıcı verisi (anahtar hesaba özel).
+        let raw = await AsyncStorage.getItem(dataKey);
+        // İlk açılış taşıması: eski ortak anahtar varsa aktif hesaba taşı.
+        if (!raw) {
+          const legacyRaw = await AsyncStorage.getItem(LEGACY_STORAGE_KEY);
+          if (legacyRaw) {
+            await AsyncStorage.setItem(dataKey, legacyRaw).catch(() => {});
+            await AsyncStorage.removeItem(LEGACY_STORAGE_KEY).catch(() => {});
+            raw = legacyRaw;
+          }
+        }
         if (raw) {
           let parsed;
           try {
             parsed = JSON.parse(raw);
           } catch (e) {
             // Bozuk (corrupt) veri: silmek yerine yedek anahtara kopyala.
-            // Böylece üzerine yazmadan önce eski veriyi kurtarma şansımız kalır.
-            await AsyncStorage.setItem(BACKUP_KEY, raw);
-            console.warn(
-              'Kayıtlı veri okunamadı, yedeğe alındı. Sıfırdan başlanacak.'
-            );
-            setLoading(false);
+            await AsyncStorage.setItem(backupKey, raw);
+            console.warn('Kayıtlı veri okunamadı, yedeğe alındı. Sıfırdan başlanacak.');
+            if (!cancelled) setLoading(false);
             return;
           }
-          setData({
-            habits: Array.isArray(parsed.habits) ? parsed.habits : [],
-            // Eski kayıtlarda pomodoroCount/gold yoktur; varsayılanla birleştir.
-            stats: {
-              totalXp: parsed.stats?.totalXp || 0,
-              pomodoroCount: parsed.stats?.pomodoroCount || 0,
-              gold: parsed.stats?.gold || 0,
-              day: parsed.stats?.day || INITIAL_STATE.stats.day,
-              streakAwards: parsed.stats?.streakAwards || {},
-            },
-            settings: { ...INITIAL_STATE.settings, ...(parsed.settings || {}) },
-            friends: serverCacheRef.current
-              ? serverCacheRef.current.friends || []
-              : Array.isArray(parsed.friends)
-                ? parsed.friends
+          if (!cancelled) {
+            setData({
+              habits: Array.isArray(parsed.habits) ? parsed.habits : [],
+              // Eski kayıtlarda pomodoroCount/gold yoktur; varsayılanla birleştir.
+              stats: {
+                totalXp: parsed.stats?.totalXp || 0,
+                pomodoroCount: parsed.stats?.pomodoroCount || 0,
+                gold: parsed.stats?.gold || 0,
+                day: parsed.stats?.day || INITIAL_STATE.stats.day,
+                streakAwards: parsed.stats?.streakAwards || {},
+                xpBank: parsed.stats?.xpBank || 0,
+              },
+              settings: { ...INITIAL_STATE.settings, ...(parsed.settings || {}) },
+              friends: serverCacheRef.current
+                ? serverCacheRef.current.friends || []
+                : Array.isArray(parsed.friends)
+                  ? parsed.friends
+                  : [],
+              players: serverCacheRef.current
+                ? serverCacheRef.current.leaderboard
+                : Array.isArray(parsed.players)
+                  ? parsed.players
+                  : [],
+              achievements: Array.isArray(parsed.achievements)
+                ? parsed.achievements
                 : [],
-            players: serverCacheRef.current
-              ? serverCacheRef.current.leaderboard
-              : Array.isArray(parsed.players)
-                ? parsed.players
-                : [],
-            achievements: Array.isArray(parsed.achievements)
-              ? parsed.achievements
-              : [],
-            ownedAvatars: Array.isArray(parsed.ownedAvatars)
-              ? parsed.ownedAvatars
-              : INITIAL_STATE.ownedAvatars,
-            ownedThemes: Array.isArray(parsed.ownedThemes)
-              ? parsed.ownedThemes
-              : INITIAL_STATE.ownedThemes,
-            ownedFrames: Array.isArray(parsed.ownedFrames)
-              ? parsed.ownedFrames
-              : INITIAL_STATE.ownedFrames,
-            // Eski görev sistemi (v5) alanları yüklenmez; görev panosu temiz başlar.
-            questClaims:
-              parsed.questClaims &&
-              typeof parsed.questClaims === 'object' &&
-              !Array.isArray(parsed.questClaims)
-                ? Object.fromEntries(
-                    Object.entries(parsed.questClaims).filter(([id]) =>
-                      QUEST_CATALOG.some((q) => q.id === id)
+              ownedAvatars: Array.isArray(parsed.ownedAvatars)
+                ? parsed.ownedAvatars
+                : INITIAL_STATE.ownedAvatars,
+              ownedThemes: Array.isArray(parsed.ownedThemes)
+                ? parsed.ownedThemes
+                : INITIAL_STATE.ownedThemes,
+              ownedFrames: Array.isArray(parsed.ownedFrames)
+                ? parsed.ownedFrames
+                : INITIAL_STATE.ownedFrames,
+              // Eski görev sistemi (v5) alanları yüklenmez; görev panosu temiz başlar.
+              questClaims:
+                parsed.questClaims &&
+                typeof parsed.questClaims === 'object' &&
+                !Array.isArray(parsed.questClaims)
+                  ? Object.fromEntries(
+                      Object.entries(parsed.questClaims).filter(([id]) =>
+                        QUEST_CATALOG.some((q) => q.id === id)
+                      )
                     )
-                  )
-                : {},
-            pomodoro: { ...INITIAL_STATE.pomodoro, ...(parsed.pomodoro || {}) },
-          });
+                  : {},
+              pomodoro: { ...INITIAL_STATE.pomodoro, ...(parsed.pomodoro || {}) },
+            });
+          }
         }
       } catch (e) {
         // Depolama erişimi tamamen başarısızsa bile uygulama boş veriyle açılır.
         console.warn('Veri yüklenirken hata oluştu:', e);
       }
-      setLoading(false);
+      if (!cancelled) setLoading(false);
     })();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeAccount, authReady]);
 
-  // ---------- Kaydetme: veri her değiştiğinde AsyncStorage'a yaz ----------
+  // ---------- Kaydetme: veri her değiştiğinde aktif hesaba yaz ----------
   useEffect(() => {
-    if (loading) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ version: DATA_VERSION, ...data }))
-      .catch((e) => console.warn('Veri kaydedilirken hata oluştu:', e));
-  }, [data, loading]);
+    if (loading || !activeAccount) return;
+    AsyncStorage.setItem(
+      storageKeyFor(activeAccount),
+      JSON.stringify({ version: DATA_VERSION, ...data })
+    ).catch((e) => console.warn('Veri kaydedilirken hata oluştu:', e));
+  }, [data, loading, activeAccount]);
 
   // ---------- Gün takibi: gece yarısı geçişini algıla ----------
   useEffect(() => {
     // Tarih gerçekten değiştiyse state'i güncelle (aksi halde aynı bırak).
     // Test paneli gün kaydırdıysa (devOffset) o fark da hesaba katılır.
+    // Gün SUNUCU saatinden hesaplanır: cihaz saati ileri alınınca gün
+    // atlamaz, ödül pencereleri saat oynatmayla açılamaz.
     const syncToday = () =>
       setToday((prev) => {
-        const t = todayKey(settingsRef.current.devOffset || 0);
+        const t = todayKey(settingsRef.current.devOffset || 0, serverNow());
         return t === prev ? prev : t;
       });
     // Dakikada bir kontrol: uygulama açıkken gece yarısı geçerse ekran
@@ -340,7 +445,7 @@ export function DataProvider({ children }) {
   // Gün kayması (devOffset) değişince "bugün"ü hemen senkronla.
   useEffect(() => {
     setToday((prev) => {
-      const t = todayKey(data.settings.devOffset || 0);
+      const t = todayKey(data.settings.devOffset || 0, serverNow());
       return t === prev ? prev : t;
     });
   }, [data.settings.devOffset]);
@@ -424,36 +529,25 @@ export function DataProvider({ children }) {
   }, [data.settings.reminderHour]);
 
   // ---------- Yedekleme (kullanıcı isteğiyle) ----------
-  // "Yedekle": verinin anlık kopyasını ayrı anahtara yazar.
-  // "Geri Yükle": o kopyayı geri getirir. Son yedek zamanı "backupTs" tutulur.
+  // "Yedekle": verinin anlık kopyasını hesaba özel ayrı anahtara yazar.
+  // "Geri Yükle": o kopyayı geri getirir. Son yedek zamanı "backupTs" tutulur
+  // (yükleme effect'i bu anahtarı açılışta okur).
   const [backupTs, setBackupTs] = useState(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(USER_BACKUP_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed && parsed.ts) setBackupTs(parsed.ts);
-        }
-      } catch (e) {
-        console.warn('Yedek bilgisi okunamadı:', e);
-      }
-    })();
-  }, []);
 
   const backupData = useCallback(async () => {
     const payload = { ts: Date.now(), data };
-    await AsyncStorage.setItem(USER_BACKUP_KEY, JSON.stringify(payload)).catch(
+    const key = userBackupKeyFor(authRef.current?.name || activeAccount || 'varsayilan');
+    await AsyncStorage.setItem(key, JSON.stringify(payload)).catch(
       (e) => console.warn('Yedekleme yazılamadı:', e)
     );
     setBackupTs(payload.ts);
     return { ok: true };
-  }, [data]);
+  }, [data, activeAccount]);
 
   const restoreData = useCallback(async () => {
     try {
-      const raw = await AsyncStorage.getItem(USER_BACKUP_KEY);
+      const key = userBackupKeyFor(authRef.current?.name || activeAccount || 'varsayilan');
+      const raw = await AsyncStorage.getItem(key);
       if (!raw) return { ok: false, error: 'Yedek bulunamadı' };
       const parsed = JSON.parse(raw);
       if (!parsed || !parsed.data) return { ok: false, error: 'Yedek bozuk' };
@@ -533,7 +627,7 @@ export function DataProvider({ children }) {
   // oturum devam eder; süre dolmuşsa XP ödülü burada otomatik verilir.
   useEffect(() => {
     if (loading || data.pomodoro.state !== 'running') return;
-    if (data.pomodoro.endAt - Date.now() <= 0) completePomodoro();
+    if (data.pomodoro.endAt - serverNow() <= 0) completePomodoro();
   }, [loading, data.pomodoro]);
 
   // ---------- Eylemler (actions) ----------
@@ -572,30 +666,39 @@ export function DataProvider({ children }) {
       const dayBase =
         d.stats.day && d.stats.day.key === today
           ? d.stats.day
-          : { key: today, completions: 0, pomodoro: 0, goldEarned: 0, xpEarned: 0 };
+          : emptyDayCounter(today);
       let totalXp = d.stats.totalXp;
       let totalGold = d.stats.gold || 0;
+      let xpBank = d.stats.xpBank || 0;
       // Günlük görev sayaçlarına işlenecek değişim (tamamla/geri al).
       let dayDelta = { completions: 0, goldEarned: 0, xpEarned: 0 };
       // Seri ödülü tost bildirimi (updater dışına taşınır).
       let streakToast = null;
+      // Kumbara bildirimi: tavanı aşan kısım bankaya aktarılınca gösterilir.
+      let bankToast = null;
       const streakAwards = { ...(d.stats.streakAwards || {}) };
+      // Kumbara kuralı map dışında hesaplanır (geri alma yolunda kullanılmaz).
+      const bankState = applyXpWithBank(dayBase, xpBank, xp);
+      let done = false;
       const habits = d.habits.map((h) => {
         if (h.id !== id) return h;
-        const done = h.completedDates.includes(today);
+        done = h.completedDates.includes(today);
         if (done) {
           // Geri al: kazanılan XP/altın iade edilir, tavan geri açılır.
           totalXp = Math.max(0, totalXp - xp);
           totalGold = Math.max(0, totalGold - gold);
           dayDelta = { completions: -1, goldEarned: -gold, xpEarned: -xp };
         } else {
-          // ANTI-FARM (Katman 1): günlük tavan doluysa ödül verilmez,
-          // tamamlama yine de sayılır (seri + görev ilerlemesi korunur).
-          const xpGain = Math.min(xp, Math.max(0, DAILY_XP_CAP - dayBase.xpEarned));
+          // ANTI-FARM (Katman 1): günlük tavan doluysa alışkanlık XP'sinin
+          // tavanı aşan kısmı yanmaz — KUMBARADA birikir; ayrıca o gün
+          // bankadan 500'e kadar XP "azar azar" geri verilir.
+          const xpGain = bankState.freshXp + bankState.releaseXp;
+          xpBank = bankState.bank;
           const goldGain = Math.min(gold, Math.max(0, DAILY_GOLD_CAP - dayBase.goldEarned));
           // SERİ ÖDÜLÜ: 3/7/14/30/60 gün eşikleri yakalanınca bonus XP+altın.
           // streakAwards alışkanlık başına en son ödüllenen eşiği tutar;
           // seri korunsa bile aynı eşik bir daha ödenmez (farm koruması).
+          // Bonus günlük tavandan MUAFTIR (eşik zaten bir kez ödenir).
           const newDates = [...h.completedDates, today];
           const newStreak = calcStreak(newDates, today);
           const awarded = streakAwards[id] || 0;
@@ -603,8 +706,8 @@ export function DataProvider({ children }) {
           let bonusXp = 0;
           let bonusGold = 0;
           if (bonus) {
-            bonusXp = Math.min(bonus.xp, Math.max(0, DAILY_XP_CAP - dayBase.xpEarned - xpGain));
-            bonusGold = Math.min(bonus.gold, Math.max(0, DAILY_GOLD_CAP - dayBase.goldEarned - goldGain));
+            bonusXp = bonus.xp;
+            bonusGold = bonus.gold;
             streakAwards[id] = newStreak;
             streakToast = { streak: newStreak, xp: bonusXp, gold: bonusGold };
           }
@@ -613,8 +716,11 @@ export function DataProvider({ children }) {
           dayDelta = {
             completions: 1,
             goldEarned: goldGain + bonusGold,
-            xpEarned: xpGain + bonusXp,
+            xpEarned: 0, // kumbara kuralı stats.day'a doğrudan işlenir
           };
+          if (bankState.overflow > 0) {
+            bankToast = { overflow: bankState.overflow };
+          }
         }
         return {
           ...h,
@@ -637,12 +743,34 @@ export function DataProvider({ children }) {
           ]);
         });
       }
+      // Kumbara bildirimi: tavanı aşan XP bankaya aktarıldı.
+      if (bankToast) {
+        queueMicrotask(() => {
+          setToasts((prev) => [
+            ...prev,
+            {
+              key: `bank_${id}_${Date.now()}`,
+              icon: '💼',
+              title: `Sınıra takıldı: +${bankToast.overflow} XP kumbarada birikti`,
+              color: COLORS.xp,
+            },
+          ]);
+        });
+      }
       // Görev sayaçlarını güncelle (gün değiştiyse otomatik sıfırlanır).
       const stats = bumpDay(
-        { ...d.stats, totalXp, gold: totalGold, streakAwards },
+        { ...d.stats, totalXp, gold: totalGold, streakAwards, xpBank },
         today,
         dayDelta
       );
+      // Kumbara kuralının gün sayaçları (xpEarned + bankReleased) doğrudan işlenir.
+      if (!done) {
+        stats.day = {
+          ...stats.day,
+          xpEarned: bankState.day.xpEarned,
+          bankReleased: bankState.day.bankReleased,
+        };
+      }
       return { ...d, habits, stats };
     });
   }, []);
@@ -675,6 +803,7 @@ export function DataProvider({ children }) {
       const sp = await getServerProfile(name);
       anchor.lastSyncedXp = sp?.xp ?? 0;
       anchor.lastSyncedGold = sp?.coins ?? 0;
+      anchor.lastSyncedBank = sp?.bank ?? 0;
       anchor.initialized = true;
     }
     // Taze cihaz koruması: yerel toplamlar 0'ken (yeni kurulum / geri
@@ -683,9 +812,16 @@ export function DataProvider({ children }) {
     // girince tüm birikim sıfırlanırdı (admin ödülleri dahil).
     const freshDevice = snap.stats.totalXp === 0 && anchor.lastSyncedXp > 0;
     const freshDeviceGold = snap.stats.gold === 0 && anchor.lastSyncedGold > 0;
+    // KUMBARA delta'sı: son senkrondan bu yana kumbaranın NET değişimi
+    // (taşan XP eklendi + boşaltılan XP düşüldü). Sunucu aynı kuralı
+    // uygular, böylece iki taraf bakiyesi hiç ayrışmaz.
+    const bankDelta = freshDevice
+      ? 0
+      : Math.round((snap.stats.xpBank || 0) - (anchor.lastSyncedBank || 0));
     const r = await updateProfileData(name, {
       deltaXp: freshDevice ? 0 : snap.stats.totalXp - anchor.lastSyncedXp,
       deltaGold: freshDeviceGold ? 0 : snap.stats.gold - anchor.lastSyncedGold,
+      bankDelta,
       totalXp: snap.stats.totalXp, // geçiş dönemi fallback'i için
       totalGold: snap.stats.gold, // geçiş dönemi fallback'i için
       claimedDay: offsetToday(),
@@ -694,9 +830,14 @@ export function DataProvider({ children }) {
     const d = r.data || {};
     anchor.lastSyncedXp = typeof d.serverXp === 'number' ? d.serverXp : anchor.lastSyncedXp;
     anchor.lastSyncedGold = typeof d.serverGold === 'number' ? d.serverGold : anchor.lastSyncedGold;
+    anchor.lastSyncedBank = typeof d.serverBank === 'number' ? d.serverBank : anchor.lastSyncedBank;
     AsyncStorage.setItem(
-      SYNC_ANCHOR_KEY,
-      JSON.stringify({ lastSyncedXp: anchor.lastSyncedXp, lastSyncedGold: anchor.lastSyncedGold })
+      syncAnchorKeyFor(name),
+      JSON.stringify({
+        lastSyncedXp: anchor.lastSyncedXp,
+        lastSyncedGold: anchor.lastSyncedGold,
+        lastSyncedBank: anchor.lastSyncedBank,
+      })
     ).catch(() => {});
     return { ok: true, warn: r.warn };
   }, []);
@@ -780,9 +921,10 @@ export function DataProvider({ children }) {
       lastSync: savedAt,
     };
     setServer((s) => ({ ...s, ...patch, connected: true }));
-    await AsyncStorage.setItem(SERVER_CACHE_KEY, JSON.stringify({ ...patch, savedAt })).catch(
-      () => {}
-    );
+    await AsyncStorage.setItem(
+      serverCacheKeyFor(name),
+      JSON.stringify({ ...patch, savedAt })
+    ).catch(() => {});
     if (gotMeta) setData((d) => ({ ...d, players: board, friends: friendsMapped }));
     return true;
   }, []);
@@ -790,6 +932,8 @@ export function DataProvider({ children }) {
   const runSync = useCallback(async () => {
     if (pushRef.current) return;
     pushRef.current = true;
+    // "refreshing" göstergesi: çek-yenile (pull-to-refresh) bu state'i okur.
+    setServer((s) => ({ ...s, syncing: true }));
     try {
       const snap = dataRef.current;
       const name = authRef.current?.name || snap.settings.name || 'Kullanıcı';
@@ -824,6 +968,7 @@ export function DataProvider({ children }) {
       setServer((s) => ({ ...s, connected: false }));
     } finally {
       pushRef.current = false;
+      setServer((s) => ({ ...s, syncing: false }));
     }
   }, [publishProfile, pullServer, refreshServerMeta]);
 
@@ -1036,19 +1181,20 @@ export function DataProvider({ children }) {
 
   // ---------- Pomodoro eylemleri ----------
   // Oturum "timestamp" tabanlı çalışır: bitiş anı (endAt) saklanır, kalan süre
-  // her an Date.now() farkıyla hesaplanır. Böylece arka plana geçilse veya
-  // uygulama kapatılsa bile sayaç doğru kalır.
+  // her an SUNUCU saatine (serverNow) göre hesaplanır. Böylece arka plana
+  // geçilse veya uygulama kapatılsa bile sayaç doğru kalır; cihaz saati geri
+  // alınsa bile süre 25 dakikayı aşamaz (saat oynatma koruması).
 
   // Boştaysa sayacı başlatır (duraklatılmıştan devam etme ayrı fonksiyonda).
   const startPomodoro = useCallback(() => {
     setData((d) => {
       if (d.pomodoro.state === 'running') return d;
-      const base = d.pomodoro.remainingMs || POMODORO_DURATION_MS;
+      const base = Math.min(POMODORO_DURATION_MS, d.pomodoro.remainingMs || POMODORO_DURATION_MS);
       return {
         ...d,
         pomodoro: {
           state: 'running',
-          endAt: Date.now() + base,
+          endAt: serverNow() + base,
           remainingMs: base,
         },
       };
@@ -1064,7 +1210,7 @@ export function DataProvider({ children }) {
         pomodoro: {
           state: 'paused',
           endAt: 0,
-          remainingMs: Math.max(0, d.pomodoro.endAt - Date.now()),
+          remainingMs: Math.max(0, Math.min(POMODORO_DURATION_MS, d.pomodoro.endAt - serverNow())),
         },
       };
     });
@@ -1078,7 +1224,7 @@ export function DataProvider({ children }) {
         ...d,
         pomodoro: {
           state: 'running',
-          endAt: Date.now() + d.pomodoro.remainingMs,
+          endAt: serverNow() + d.pomodoro.remainingMs,
           remainingMs: d.pomodoro.remainingMs,
         },
       };
@@ -1096,47 +1242,70 @@ export function DataProvider({ children }) {
   // Süre dolunca XP ödülü verir ve oturumu temizler. Hem bileşen sayacı hem
   // de "uygulama kapalıyken süre doldu" efekti çağırabilir; içerideki kontroller
   // (state kontrolü + süre kontrolü) çift ödül verilmesini engeller.
+  // Süre kontrolü SUNUCU saatine göre yapılır (cihaz saati oynatılamaz).
   const completePomodoro = useCallback(() => {
+    const snap = dataRef.current;
+    if (snap.pomodoro.state !== 'running' || snap.pomodoro.endAt - serverNow() > 0) return;
+    const xp = snap.settings.pomodoroXp || 50;
+    const gold = GOLD_RATES.pomodoro;
+    const today = offsetToday();
+    // ANTI-FARM (Katman 1): pomodoro XP'si günlük tavana sayılır; tavanı
+    // aşan kısım KUMBARADA birikir, ayrıca o gün bankadan 500'e kadar
+    // XP "azar azar" geri verilir.
+    const dayBase =
+      snap.stats.day && snap.stats.day.key === today
+        ? snap.stats.day
+        : emptyDayCounter(today);
+    const bankState = applyXpWithBank(dayBase, snap.stats.xpBank || 0, xp);
+    const xpGain = bankState.freshXp + bankState.releaseXp;
+    const goldGain = Math.min(gold, Math.max(0, DAILY_GOLD_CAP - dayBase.goldEarned));
+    setToasts((prev) => [
+      ...prev,
+      {
+        key: `pomo_${Date.now()}`,
+        icon: '🍅',
+        title:
+          bankState.overflow > 0
+            ? `Odak seansı tamamlandı! +${xpGain} XP (+${bankState.overflow} XP kumbarada 💼)`
+            : `Odak seansı tamamlandı! +${xpGain} XP`,
+        color: COLORS.accent,
+      },
+    ]);
     setData((d) => {
-      if (d.pomodoro.state !== 'running' || d.pomodoro.endAt - Date.now() > 0) {
+      if (d.pomodoro.state !== 'running' || d.pomodoro.endAt - serverNow() > 0) {
         return d;
       }
-      const xp = d.settings.pomodoroXp || 50;
-      const gold = GOLD_RATES.pomodoro;
-      const today = offsetToday();
-      // ANTI-FARM (Katman 1): günlük XP/altın tavanı pomodoro için de geçerli.
-      const dayBase =
+      const dayB =
         d.stats.day && d.stats.day.key === today
           ? d.stats.day
-          : { key: today, completions: 0, pomodoro: 0, goldEarned: 0, xpEarned: 0 };
-      const xpGain = Math.min(xp, Math.max(0, DAILY_XP_CAP - dayBase.xpEarned));
-      const goldGain = Math.min(gold, Math.max(0, DAILY_GOLD_CAP - dayBase.goldEarned));
+          : emptyDayCounter(today);
+      const bank = applyXpWithBank(dayB, d.stats.xpBank || 0, xp);
+      const gain = bank.freshXp + bank.releaseXp;
+      const gGain = Math.min(gold, Math.max(0, DAILY_GOLD_CAP - dayB.goldEarned));
       // Görev sayaçları: odak +1, altın +15 (gün değiştiyse sıfırlanır).
       const stats = bumpDay(
         {
           ...d.stats,
-          totalXp: d.stats.totalXp + xpGain,
+          totalXp: d.stats.totalXp + gain,
           pomodoroCount: (d.stats.pomodoroCount || 0) + 1,
-          gold: (d.stats.gold || 0) + goldGain,
+          gold: (d.stats.gold || 0) + gGain,
+          xpBank: bank.bank,
         },
         today,
-        { pomodoro: 1, goldEarned: goldGain, xpEarned: xpGain }
+        { pomodoro: 1, goldEarned: gGain, xpEarned: 0 }
       );
+      // Kumbara kuralının gün sayaçları doğrudan işlenir.
+      stats.day = {
+        ...stats.day,
+        xpEarned: bank.day.xpEarned,
+        bankReleased: bank.day.bankReleased,
+      };
       return {
         ...d,
         stats,
         pomodoro: { state: 'idle', endAt: 0, remainingMs: POMODORO_DURATION_MS },
       };
     });
-    setToasts((prev) => [
-      ...prev,
-      {
-        key: `pomo_${Date.now()}`,
-        icon: '🍅',
-        title: `Odak seansı tamamlandı! +${settingsRef.current.pomodoroXp || 50} XP`,
-        color: COLORS.accent,
-      },
-    ]);
   }, []);
 
   // Kayan bildirimi kapatır (kuyruktaki ilk öğeyi gizler).
@@ -1229,64 +1398,135 @@ export function DataProvider({ children }) {
   //   (manuel görevler liderlik tablosunu kirletmesin diye XP vermez).
   // Ödül alınınca görevin beklemesi başlar; otomatik görevlerde ilerleme
   // anlık görüntüyle (value) sıfırlanır, sayaç ilerledikçe yeniden dolar.
+  // Görev ödülünü alır — KATMAN 3 doğrulamalı (hileci duvarı).
+  // 1) Yerel hızlı kontrol: buton görsel olarak hazır mı?
+  // 2) Sunucu senkronu: offset'i tazeler (cihaz saati oynatılmışsa düzeltir)
+  //    ve ödül öncesi bağlantıyı doğrular. Bağlantı yoksa veya saat
+  //    doğrulanamadıysa ödül VERİLMEZ.
+  // 3) sync-quest Edge Function: bekleme süresi + günlük ödül limiti SUNUCU
+  //    saatine göre doğrulanır; reddedilirse ödül verilmez.
+  // 4) Onay gelince kumbara/altın yoluyla yerel ödül uygulanır.
+  const claimingRef = useRef(false);
   const claimQuest = useCallback(
-    (questId) => {
+    async (questId) => {
       const quest = getQuest(questId);
-      if (!quest || !canClaimQuest(quest, data.stats.day, data.questClaims || {}, serverNow())) {
-        return;
-      }
-      const diff = QUEST_DIFFICULTIES[quest.difficulty];
-      const xpGain = quest.type === 'auto' ? diff.xp : 0;
-      setData((d) => {
-        const q = getQuest(questId);
-        const claims = d.questClaims || {};
-        if (!q || !canClaimQuest(q, d.stats.day, claims, serverNow())) return d;
+      if (!quest) return;
+      const snap = dataRef.current;
+      if (!canClaimQuest(quest, snap.stats.day, snap.questClaims || {}, serverNow())) return;
+      // Çift basma / eşzamanlı ödül koruması.
+      if (claimingRef.current) return;
+      claimingRef.current = true;
+      try {
+        // Sunucu senkronu: hem taze saat hem bağlantı kontrolü (çevrimdışıysa başarısız).
+        await refreshServer();
+        if (!isClockFresh() || isClockTampered()) {
+          setToasts((prev) => [
+            ...prev,
+            {
+              key: `q_clock_${Date.now()}`,
+              icon: '📡',
+              title: 'Görev ödülü için bağlantı gerekiyor — sunucu saati doğrulanamadı',
+              color: COLORS.danger,
+            },
+          ]);
+          return;
+        }
+        const name = authRef.current?.name || snap.settings.name || 'Kullanıcı';
+        const res = await claimQuestServer(name, questId);
+        if (!res.ok) {
+          if (res.error === 'banned') {
+            await refreshServerMeta(name);
+            return;
+          }
+          const title =
+            res.error === 'cooldown'
+              ? `⏳ Bekleme süresi dolmadı — ${formatDuration(res.remainingMs || 0)} kaldı`
+              : res.error === 'daily_claim_limit'
+                ? 'Günlük görev ödül limitine ulaşıldı — yarın tekrar dene'
+                : 'Görev ödülü sunucuda doğrulanamadı — tekrar dene';
+          setToasts((prev) => [
+            ...prev,
+            {
+              key: `q_reject_${Date.now()}`,
+              icon: quest.emoji,
+              title,
+              color: COLORS.danger,
+            },
+          ]);
+          return;
+        }
+        // Sunucu onayladı → yerel ödülü uygula (XP kumbarası + altın tavanı).
+        const diff = QUEST_DIFFICULTIES[quest.difficulty];
+        const xpGain = quest.type === 'auto' ? diff.xp : 0;
         const today = offsetToday();
-        // ANTI-FARM (Katman 1): görev ödülleri de günlük tavanlara tabidir.
-        const dayBase =
-          d.stats.day && d.stats.day.key === today
-            ? d.stats.day
-            : { key: today, completions: 0, pomodoro: 0, goldEarned: 0, xpEarned: 0 };
-        const cappedXp = Math.min(xpGain, Math.max(0, DAILY_XP_CAP - dayBase.xpEarned));
-        const cappedGold = Math.min(diff.gold, Math.max(0, DAILY_GOLD_CAP - dayBase.goldEarned));
-        const metricValue = q.type === 'auto' ? (d.stats.day?.[q.metric] ?? 0) : 0;
-        return {
-          ...d,
-          // Bekleme zaman damgası sunucu saatine göre yazılır (saat oynatma koruması).
-          questClaims: { ...claims, [questId]: { ts: serverNow(), value: metricValue } },
-          // XP seviye atlama efektini tetikler; altın günlük sayaca işlenir.
-          stats: bumpDay(
+        setData((d) => {
+          const q = getQuest(questId);
+          const claims = d.questClaims || {};
+          if (!q) return d;
+          // ANTI-FARM (Katman 1): görev XP'si günlük tavana sayılır; tavanı
+          // aşan kısım KUMBARADA birikir, ayrıca o gün bankadan 500'e kadar
+          // XP "azar azar" geri verilir (görev ödülleri yanmaz).
+          const dayBase =
+            d.stats.day && d.stats.day.key === today
+              ? d.stats.day
+              : emptyDayCounter(today);
+          const bankState = applyXpWithBank(dayBase, d.stats.xpBank || 0, xpGain);
+          const cappedXp = bankState.freshXp + bankState.releaseXp;
+          const cappedGold = Math.min(diff.gold, Math.max(0, DAILY_GOLD_CAP - dayBase.goldEarned));
+          const metricValue = q.type === 'auto' ? (d.stats.day?.[q.metric] ?? 0) : 0;
+          const nextStats = bumpDay(
             {
               ...d.stats,
               totalXp: d.stats.totalXp + cappedXp,
               gold: (d.stats.gold || 0) + cappedGold,
+              xpBank: bankState.bank,
             },
             today,
-            { goldEarned: cappedGold, xpEarned: cappedXp }
-          ),
-        };
-      });
-      setToasts((prev) => [
-        ...prev,
-        {
-          key: `quest_${questId}_${Date.now()}`,
-          icon: quest.emoji,
-          title: `${quest.title} tamamlandı! ${xpGain ? `+${xpGain} XP ` : ''}+${diff.gold} 🪙`,
-          color: COLORS.accent,
-        },
-      ]);
+            { goldEarned: cappedGold, xpEarned: 0 }
+          );
+          // Kumbara kuralının gün sayaçları doğrudan işlenir.
+          nextStats.day = {
+            ...nextStats.day,
+            xpEarned: bankState.day.xpEarned,
+            bankReleased: bankState.day.bankReleased,
+          };
+          return {
+            ...d,
+            // Bekleme zaman damgası sunucu saatine göre yazılır (saat oynatma koruması).
+            questClaims: { ...claims, [questId]: { ts: serverNow(), value: metricValue } },
+            // XP seviye atlama efektini tetikler; altın günlük sayaca işlenir.
+            stats: nextStats,
+          };
+        });
+        setToasts((prev) => [
+          ...prev,
+          {
+            key: `quest_${questId}_${Date.now()}`,
+            icon: quest.emoji,
+            title: `${quest.title} tamamlandı! ${xpGain ? `+${xpGain} XP ` : ''}+${diff.gold} 🪙`,
+            color: COLORS.accent,
+          },
+        ]);
+      } finally {
+        claimingRef.current = false;
+      }
     },
-    [data.stats.day, data.questClaims]
+    [refreshServer, refreshServerMeta]
   );
 
   // Tüm veriyi (ana + yedek) temizler ve başlangıç durumuna döner.
   const resetAll = useCallback(async () => {
     settingsRef.current = INITIAL_STATE.settings;
     setData(INITIAL_STATE);
-    await AsyncStorage.multiRemove([STORAGE_KEY, BACKUP_KEY]).catch((e) =>
-      console.warn('Sıfırlama sırasında hata:', e)
-    );
-  }, []);
+    const name = authRef.current?.name || activeAccount || 'varsayilan';
+    await AsyncStorage.multiRemove([
+      storageKeyFor(name),
+      backupKeyFor(name),
+      serverCacheKeyFor(name),
+      syncAnchorKeyFor(name),
+      userBackupKeyFor(name),
+    ]).catch((e) => console.warn('Sıfırlama sırasında hata:', e));
+  }, [activeAccount]);
 
   // Context değeri yalnızca ilgili değişkenler değişince yenilenir (memo).
   const value = useMemo(
@@ -1298,6 +1538,7 @@ export function DataProvider({ children }) {
       toggleHabit,
       deleteHabit,
       server,
+      refreshing: server.syncing,
       refreshServer,
       requestFriend,
       acceptRequest,

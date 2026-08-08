@@ -184,15 +184,16 @@ export function canClaimQuest(quest, dayStats, claims, now = Date.now()) {
 }
 
 // Günlük "günlük sayaçları" güncelleme yardımcısı (saf fonksiyon).
-// stats.day = { key, completions, pomodoro, goldEarned, xpEarned } —
+// stats.day = { key, completions, pomodoro, goldEarned, xpEarned, bankReleased } —
 // gün değişince sayaçlar sıfırlanır (yeni güne başlar). delta ile
 // artır/azalt. xpEarned: günlük XP kazanç tavanının takibi için;
 // goldEarned: hem görev metriği hem altın tavanı sayacıdır.
+// bankReleased: XP kumbarasından o gün boşaltılan miktar (günde 500 sınırlı).
 export function bumpDay(stats, today, delta) {
   const base =
     stats.day && stats.day.key === today
       ? stats.day
-      : { key: today, completions: 0, pomodoro: 0, goldEarned: 0, xpEarned: 0 };
+      : { key: today, completions: 0, pomodoro: 0, goldEarned: 0, xpEarned: 0, bankReleased: 0 };
   return {
     ...stats,
     day: {
@@ -201,6 +202,7 @@ export function bumpDay(stats, today, delta) {
       pomodoro: Math.max(0, base.pomodoro + (delta.pomodoro || 0)),
       goldEarned: Math.max(0, base.goldEarned + (delta.goldEarned || 0)),
       xpEarned: Math.max(0, base.xpEarned + (delta.xpEarned || 0)),
+      bankReleased: Math.max(0, base.bankReleased + (delta.bankReleased || 0)),
     },
   };
 }

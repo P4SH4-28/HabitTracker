@@ -86,7 +86,7 @@ export default function Onboarding({ onComplete }) {
           style={[styles.nextButton, { backgroundColor: colors.primary }]}
           onPress={() => (last ? finish() : setPage((x) => x + 1))}
         >
-          <Text style={styles.nextText}>{last ? 'Başla 🚀' : 'İleri →'}</Text>
+          <Text style={[styles.nextText, { color: colors.onPrimary }]}>{last ? 'Başla 🚀' : 'İleri →'}</Text>
         </Pressable>
 
         <Pressable onPress={finish} style={styles.skipButton}>

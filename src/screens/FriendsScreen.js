@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import AddFriendModal from '../components/AddFriendModal';
 import AvatarCircle from '../components/AvatarCircle';
 import { confirmDialog } from '../components/HabitCard';
@@ -20,6 +20,8 @@ export default function FriendsScreen() {
     acceptDuel,
     declineDuel,
     finishDuel,
+    refreshServer,
+    refreshing,
   } = useData();
   const [modalVisible, setModalVisible] = useState(false);
   const [selected, setSelected] = useState(null);
@@ -94,6 +96,16 @@ export default function FriendsScreen() {
         ListHeaderComponent={header}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        // Çek-yenile: arkadaş verisini ve düelloları sunucudan tazeler.
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => refreshServer()}
+            tintColor={C.primary}
+            colors={[C.primary]}
+            progressBackgroundColor={C.surface}
+          />
+        }
         renderItem={({ item }) => {
           const activeToday = item.lastActive === today;
           return (
@@ -200,7 +212,7 @@ function makeStyles(C) {
       paddingVertical: 10,
     },
     addButtonText: {
-      color: '#FFFFFF',
+      color: C.onPrimary,
       fontSize: 14,
       fontWeight: '800',
     },

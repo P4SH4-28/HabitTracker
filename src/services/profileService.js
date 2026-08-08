@@ -12,6 +12,11 @@
 import { supabase, SUPABASE_URL } from '../config/supabase';
 
 const SYNC_FN_URL = `${SUPABASE_URL}/functions/v1/sync-profile`;
+// Görev ödülü onayı (Katman 3): bekleme süresi ve günlük ödül limitleri
+// 'sync-quest' Edge Function'ında SUNUCU saatine göre doğrulanır. Cihaz
+// saati oynatılsa bile ödül verilmez; bu fonksiyon yalnızca "onay" döner,
+// ödül miktarları yine sync-profile'in günlük tavanından geçer.
+const QUEST_FN_URL = `${SUPABASE_URL}/functions/v1/sync-quest`;
 const TIMEOUT_MS = 10000;
 
 // Sunucudaki mevcut profil toplamlarını döndürür (delta köprüsü için).
@@ -104,6 +109,52 @@ export async function updateProfileData(
       };
     }
     return { ok: true, data, warn: data?.warn };
+  } catch (e) {
+    return { ok: false, error: 'Sunucuya ulaşılamadı (çevrimdışı mısın?)' };
+  }
+}
+
+// Görev ödülünü sunucuda onaylatır. Dönüş:
+//   ok: true → onaylandı (bekleme + günlük limit temiz)
+//   ok: false, error: 'cooldown' + remainingMs → bekleme süresi dolmadı
+//   ok: false, error: 'daily_claim_limit' → günlük ödül limiti doldu
+//   ok: false, error: 'banned' → hesap yasaklandı
+//   ok: false, error: diğer → bağlantı/sunucu hatası
+export async function claimQuestServer(username, questId) {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    let res;
+    try {
+      res = await fetch(QUEST_FN_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, questId }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    let data = null;
+    try {
+      data = await res.json();
+    } catch (e) {
+      // JSON olmayan yanıt: sunucu beklenmedik bir şey döndürdü.
+    }
+    if (res.status === 403) {
+      return { ok: false, error: data?.error || 'banned' };
+    }
+    if (res.status === 409) {
+      return {
+        ok: false,
+        error: data?.error || 'rejected',
+        remainingMs: typeof data?.remainingMs === 'number' ? data.remainingMs : 0,
+      };
+    }
+    if (!res.ok) {
+      return { ok: false, error: data?.error || `Sunucu hatası (${res.status})` };
+    }
+    return { ok: true, data };
   } catch (e) {
     return { ok: false, error: 'Sunucuya ulaşılamadı (çevrimdışı mısın?)' };
   }

@@ -133,7 +133,7 @@ export default function AddFriendModal({ visible, onClose }) {
                         disabled={busy === r.username}
                       >
                         {busy === r.username ? (
-                          <ActivityIndicator size="small" color="#FFFFFF" />
+                          <ActivityIndicator size="small" color={C.onPrimary} />
                         ) : (
                           <Text style={styles.sendButtonText}>İstek Gönder</Text>
                         )}
@@ -221,7 +221,7 @@ function makeStyles(C) {
       opacity: 0.5,
     },
     sendButtonText: {
-      color: '#FFFFFF',
+      color: C.onPrimary,
       fontSize: 13,
       fontWeight: '800',
     },

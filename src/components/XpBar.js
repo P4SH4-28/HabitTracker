@@ -60,12 +60,12 @@ function makeStyles(C) {
     elevation: 8,
   },
   levelNumber: {
-    color: '#FFFFFF',
+    color: C.onPrimary,
     fontSize: 28,
     fontWeight: '800',
   },
   levelLabel: {
-    color: 'rgba(255,255,255,0.8)',
+    color: C.onPrimary + 'CC',
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,

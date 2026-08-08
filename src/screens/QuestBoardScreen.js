@@ -7,7 +7,15 @@
 // manuel görevler "Yaptım" butonuyla onaylanır (yalnızca altın verir).
 // ============================================================
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useData } from '../context/DataContext';
 import { dateKey } from '../logic';
 import { serverNow } from '../services/serverClock';
@@ -35,7 +43,7 @@ function formatCooldown(ms) {
 }
 
 export default function QuestBoardScreen() {
-  const { data, today, claimQuest } = useData();
+  const { data, today, claimQuest, server, refreshServer, refreshing } = useData();
   const { colors: C } = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
 
@@ -46,6 +54,17 @@ export default function QuestBoardScreen() {
     const interval = setInterval(() => setNow(serverNow()), 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Ödül alırken buton kilitlenir (sunucu onayı beklenir).
+  const [claimingId, setClaimingId] = useState(null);
+  const handleClaim = async (questId) => {
+    if (claimingId) return;
+    setClaimingId(questId);
+    await claimQuest(questId);
+    setClaimingId(null);
+  };
+  // Çevrimdışıysa ödüller zaten verilmez — kullanıcı bilgilendirilir.
+  const offline = server.connected === false;
 
   const claims = data.questClaims || {};
   const dayStats = data.stats.day;
@@ -60,12 +79,31 @@ export default function QuestBoardScreen() {
       style={styles.container}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
+      // Çek-yenile: sunucu saatini, görev alımlarını ve profili tazeler.
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => refreshServer()}
+          tintColor={C.primary}
+          colors={[C.primary]}
+          progressBackgroundColor={C.surface}
+        />
+      }
     >
       <Text style={styles.screenTitle}>🎯 Görevler</Text>
       <Text style={styles.screenSub}>
         Bugün {doneToday} görev tamamladın — kutulardaki süreler, görevi ne
         sıklıkla yapabileceğini gösterir.
       </Text>
+
+      {offline && (
+        <View style={styles.offlineBox}>
+          <Text style={styles.offlineText}>
+            📡 Sunucuya bağlanılamıyor — ödüller sunucu onayı gerektirdiği için
+            şu an görev tamamlayamazsın. Bağlantı gelince yeniden dene.
+          </Text>
+        </View>
+      )}
 
       {QUEST_DIFFICULTY_ORDER.map((difficulty) => {
         const diff = QUEST_DIFFICULTIES[difficulty];
@@ -153,12 +191,21 @@ export default function QuestBoardScreen() {
                         </Text>
                       ) : done ? (
                         <Pressable
-                          style={[styles.claimBtn, { backgroundColor: accent }]}
-                          onPress={() => claimQuest(quest.id)}
+                          style={[
+                            styles.claimBtn,
+                            { backgroundColor: accent },
+                            (claimingId || offline) && styles.claimBtnDisabled,
+                          ]}
+                          onPress={() => handleClaim(quest.id)}
+                          disabled={!!claimingId || offline}
                         >
-                          <Text style={[styles.claimBtnText, { color: C.background }]}>
-                            {quest.type === 'auto' ? 'Ödülü Al' : 'Yaptım'}
-                          </Text>
+                          {claimingId === quest.id ? (
+                            <ActivityIndicator size="small" color={C.background} />
+                          ) : (
+                            <Text style={[styles.claimBtnText, { color: C.background }]}>
+                              {quest.type === 'auto' ? 'Ödülü Al' : 'Yaptım'}
+                            </Text>
+                          )}
                         </Pressable>
                       ) : (
                         <Text style={[styles.progressText, { color: C.textMuted }]}>
@@ -326,10 +373,28 @@ function makeStyles(C) {
       borderRadius: 10,
       paddingHorizontal: 12,
       paddingVertical: 7,
+      minHeight: 32,
+      justifyContent: 'center',
+    },
+    claimBtnDisabled: {
+      opacity: 0.55,
     },
     claimBtnText: {
       fontSize: 11,
       fontWeight: '800',
+    },
+    offlineBox: {
+      backgroundColor: C.danger + '18',
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: C.danger + '66',
+      padding: 12,
+    },
+    offlineText: {
+      color: C.text,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '600',
     },
     waitText: {
       fontSize: 11,
