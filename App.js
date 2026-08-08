@@ -5,13 +5,15 @@ import {
 } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
-import { useMemo, useEffect } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { DataProvider, useData } from './src/context/DataContext';
 import { levelFromTotalXp } from './src/logic';
+import { initErrorReporter, setErrorHandler } from './src/services/errorReporter';
 import { initNotifications } from './src/services/notifications';
+import ErrorBoundary, { FatalErrorView } from './src/components/ErrorBoundary';
 import AchievementToast from './src/components/AchievementToast';
 import BackgroundPattern from './src/components/BackgroundPattern';
 import LevelUpModal from './src/components/LevelUpModal';
@@ -28,6 +30,10 @@ import ShopScreen from './src/screens/ShopScreen';
 import { resolveTheme, ThemeProvider, useTheme } from './src/theme';
 
 const Tab = createBottomTabNavigator();
+
+// Global hata yakalayıcı: her şeyden ÖNCE kurulur (modül yüklenme anında).
+// Yakalanan hatalar ekranda gösterilir (FatalErrorView) ve AsyncStorage'a yazılır.
+initErrorReporter();
 
 const TAB_ICONS = {
   Home: 'home',
@@ -215,13 +221,25 @@ function Root() {
 }
 
 export default function App() {
+  // Yakalanan hatalar bu state ile ekran üstünde gösterilir (sessiz çökme yok).
+  const [fatal, setFatal] = useState(null);
+  useEffect(() => {
+    setErrorHandler(setFatal);
+    return () => setErrorHandler(null);
+  }, []);
+
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <DataProvider>
-          <Root />
-        </DataProvider>
-      </AuthProvider>
+      {/* Render hataları (ekran/geçiş sırasında) burada yakalanır. */}
+      <ErrorBoundary>
+        <AuthProvider>
+          <DataProvider>
+            <Root />
+          </DataProvider>
+        </AuthProvider>
+        {/* Render dışı hatalar (zamanlayıcı, senkron vb.) bu overlay'le görünür. */}
+        {fatal ? <FatalErrorView error={fatal} onRetry={() => setFatal(null)} /> : null}
+      </ErrorBoundary>
     </SafeAreaProvider>
   );
 }

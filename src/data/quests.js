@@ -202,7 +202,8 @@ export function bumpDay(stats, today, delta) {
       pomodoro: Math.max(0, base.pomodoro + (delta.pomodoro || 0)),
       goldEarned: Math.max(0, base.goldEarned + (delta.goldEarned || 0)),
       xpEarned: Math.max(0, base.xpEarned + (delta.xpEarned || 0)),
-      bankReleased: Math.max(0, base.bankReleased + (delta.bankReleased || 0)),
+      // Eski kayıtlarda (build 11 ve öncesi) bankReleased yoktur; eksikse 0 al.
+      bankReleased: Math.max(0, (base.bankReleased || 0) + (delta.bankReleased || 0)),
     },
   };
 }

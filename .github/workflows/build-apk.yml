@@ -143,6 +143,12 @@ jobs:
       # İndirme linkleri:
       #   APK: https://github.com/P4SH4-28/HabitTracker/releases/latest/download/HabitTracker.apk
       #   AAB: https://github.com/P4SH4-28/HabitTracker/releases/latest/download/app-release.aab
+      # DİKKAT: sabit APK linki "HabitTracker.apk" adını arar; bu yüzden dosya
+      # yüklenmeden önce o adla kopyalanır (app-release.apk adı linki kırardı).
+      - name: APK'yı Sabit Link Adına Kopyala
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk HabitTracker.apk
+
       - name: Release Oluştur (Latest APK + AAB)
         uses: softprops/action-gh-release@v2
         with:
@@ -155,7 +161,7 @@ jobs:
             - AAB (Play Store yüklemesi): `https://github.com/P4SH4-28/HabitTracker/releases/latest/download/app-release.aab`
             - Build zamanı: $(date -u)
           files: |
-            android/app/build/outputs/apk/release/app-release.apk
+            HabitTracker.apk
             android/app/build/outputs/bundle/release/app-release.aab
           make_latest: 'true'
         env:
