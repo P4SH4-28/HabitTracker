@@ -69,12 +69,7 @@ Manuel derleme için: `.github/workflows/build-apk.yml` → **Run workflow**.
 
 ## 🧪 Testler
 
-Edge function karar mantıkları (tavan, saat koruması, ban, hediye) yerel simülasyonlarla doğrulanır:
-
-```bash
-node C:\Users\KPLN\AppData\Local\Temp\opencode\test-edge-logic.mjs
-node C:\Users\KPLN\AppData\Local\Temp\opencode\test-admin-logic.mjs
-```
+Edge function karar mantıkları (tavan, saat koruması, ban, hediye) yerel simülasyonlarla doğrulanır — gerçek bir test veritabanı gerektirmez.
 
 ## 🔐 Hesap Sistemi
 
