@@ -12,11 +12,15 @@ on:
       - 'docs/**'
       - 'supabase/**'
       - 'supabase-*.sql'
+      - 'HabitTracker.apk' # Derleme sonrası APK'nın depoya geri yüklenmesi yeni build tetiklemesin
   workflow_dispatch: # GitHub arayüzünden manuel "Çalıştır" butonu ekler
 
 jobs:
   build-android:
     runs-on: ubuntu-latest
+    # Build sonrası APK'yı depoya geri itebilmek için yazma izni
+    permissions:
+      contents: write
 
     steps:
       # 1. ADIM: Depodaki proje kodlarını sanal sunucuya çekiyoruz
@@ -81,3 +85,15 @@ jobs:
           make_latest: 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 10. ADIM: APK'yı depo kök dizinine kopyalayıp main dalına itiyoruz.
+      # Böylece README'nin altında dosya listesinde "HabitTracker.apk" görünür
+      # ve GitHub'dan tek tıkla indirilebilir.
+      - name: APK'yı Depoya Geri Yükle (README Yanına)
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk HabitTracker.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add HabitTracker.apk
+          git commit -m "chore: güncel APK derlemesi" || echo "APK değişmemiş, commit atlanıyor"
+          git push origin main
