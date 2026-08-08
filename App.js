@@ -140,7 +140,7 @@ function TabNavigator() {
 
 function Root() {
   const { data, loading, server } = useData();
-  const { status: authStatus } = useAuth();
+  const { user: authUser, status: authStatus } = useAuth();
   // Bildirim handler'ı: ön plandayken gelen bildirimler ekran üstünden
   // gösterilir (initNotifications modül yüklendiğinde kurulur, güvenlidir).
   useEffect(() => {
