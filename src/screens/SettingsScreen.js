@@ -3,7 +3,7 @@
 // Bölümler: Profil (hesap + çıkış), Oyunlaştırma (XP + ceza),
 // Bildirimler (hatırlatma saati), Görünüm, Veri (yedek/sıfırla), Hakkında.
 // ============================================================
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import {
   Alert,
   Platform,
@@ -22,6 +22,11 @@ import Sheet from '../components/Sheet';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { getShopItem } from '../data/shop';
+import {
+  cancelDailyReminder,
+  ensureNotificationPermission,
+  scheduleDailyReminder,
+} from '../services/notifications';
 import { checkServerConnection } from '../services/syncService';
 import { getTheme, useTheme } from '../theme';
 
@@ -115,6 +120,7 @@ export default function SettingsScreen() {
     data,
     setPenaltyEnabled,
     setReminderHour,
+    setOsNotify,
     backupData,
     restoreData,
     backupTs,
@@ -128,6 +134,35 @@ export default function SettingsScreen() {
 
   const penaltyEnabled = data.settings.penaltyEnabled !== false;
   const reminderHour = data.settings.reminderHour;
+  const osNotify = !!data.settings.osNotify;
+
+  // OS bildirimi açıkken saat değiştirilirse plan yenilenir.
+  useEffect(() => {
+    if (osNotify && reminderHour != null) {
+      scheduleDailyReminder(reminderHour);
+    }
+  }, [reminderHour, osNotify]);
+
+  // "Kapalıyken de hatırlatsın" anahtarı: izin iste + planla / iptal et.
+  const toggleOsNotify = async (value) => {
+    if (value) {
+      const granted = await ensureNotificationPermission();
+      if (!granted) {
+        notify('Bildirim izni gerekli', 'Kapalıyken hatırlatma için bildirim iznini vermelisin.');
+        return;
+      }
+      if (reminderHour == null) setReminderHour(20);
+      const r = await scheduleDailyReminder(reminderHour ?? 20);
+      if (!r.ok) {
+        notify('Hata', r.error || 'Hatırlatma planlanamadı.');
+        return;
+      }
+      setOsNotify(true);
+    } else {
+      await cancelDailyReminder();
+      setOsNotify(false);
+    }
+  };
   const currentTheme = getTheme(data.settings.themeId || 'dark');
   const currentAvatar = getShopItem(data.settings.avatarId || 'av_fox');
 
@@ -256,7 +291,7 @@ export default function SettingsScreen() {
           description={
             reminderHour == null
               ? 'Kapalı — açmak için bir saat seç'
-              : `Her gün ${String(reminderHour).padStart(2, '0')}:00'de uygulama açıkken hatırlatır`
+              : `Her gün ${String(reminderHour).padStart(2, '0')}:00'de hatırlatır`
           }
           right={
             <View style={styles.stepper}>
@@ -284,7 +319,19 @@ export default function SettingsScreen() {
         />
         <SettingRow
           label="Kapalıyken de hatırlatsın"
-          description="Gerçek OS bildirimi için ayrı bir paket gerekir; şimdilik yalnızca uygulama açıkken çalışır"
+          description={
+            osNotify
+              ? `Uygulama kapalıyken ${String(reminderHour ?? 20).padStart(2, '0')}:00'de OS bildirimi gönderilir`
+              : 'Kapalı — açınca uygulama kapalıyken bile bildirim gelir'
+          }
+          right={
+            <Switch
+              value={osNotify}
+              onValueChange={toggleOsNotify}
+              trackColor={{ true: C.primary, false: C.surfaceLight }}
+              thumbColor={osNotify ? C.onPrimary : C.textMuted}
+            />
+          }
         />
       </Section>
 

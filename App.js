@@ -5,15 +5,17 @@ import {
 } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { DataProvider, useData } from './src/context/DataContext';
 import { levelFromTotalXp } from './src/logic';
+import { initNotifications } from './src/services/notifications';
 import AchievementToast from './src/components/AchievementToast';
 import BackgroundPattern from './src/components/BackgroundPattern';
 import LevelUpModal from './src/components/LevelUpModal';
+import Onboarding from './src/components/Onboarding';
 import AuthScreen from './src/screens/AuthScreen';
 import AdminScreen from './src/screens/AdminScreen';
 import FriendsScreen from './src/screens/FriendsScreen';
@@ -133,6 +135,11 @@ function TabNavigator() {
 function Root() {
   const { data, loading, server } = useData();
   const { status: authStatus } = useAuth();
+  // Bildirim handler'ı: ön plandayken gelen bildirimler ekran üstünden
+  // gösterilir (initNotifications modül yüklendiğinde kurulur, güvenlidir).
+  useEffect(() => {
+    initNotifications();
+  }, []);
   // Aktif temanın renkleri: tema değişince tüm ağaç yeniden çizilir.
   const colors = useMemo(() => resolveTheme(data.settings.themeId), [data.settings.themeId]);
   const navTheme = useMemo(
@@ -200,6 +207,8 @@ function Root() {
             Toast: başarım/pomodoro bildirimleri. Modal: seviye atlama kutlaması. */}
         <AchievementToast />
         <LevelUpModal />
+        {/* İlk açılış rehberi: yalnızca ilk girişte, admin hesabına gösterilmez. */}
+        {!authUser?.isAdmin ? <Onboarding /> : null}
       </View>
     </ThemeProvider>
   );

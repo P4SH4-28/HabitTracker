@@ -53,40 +53,115 @@ jobs:
       - name: Expo Prebuild Oluştur
         run: npx expo prebuild --platform android
 
-      # 7. ADIM: Gradle kullanarak APK dosyasını derliyoruz
-      - name: APK Derle (Gradle)
+      # 7. ADIM: Release imzasını kuruyoruz (Play Store için gerçek anahtar)
+      # Keystore, GitHub Actions Secrets'ında base64 saklanır (depoda DEĞİL):
+      #   ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD /
+      #   ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
+      # keystore.properties + build.gradle yaması ile release imzası
+      # debug anahtarı yerine gerçek anahtara çevrilir.
+      - name: Release İmzası Kur (keystore.properties + build.gradle)
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -e
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "!! ANDROID_KEYSTORE_BASE64 secret'i yok — debug imzasıyla derleniyor (Play Store için Secrets eklemelisin)."
+            exit 0
+          fi
+          mkdir -p android/keystore
+          echo "$KEYSTORE_B64" | base64 -d > android/keystore/release.keystore
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$PWD/android/keystore/release.keystore" "$KS_PASS" "$KEY_ALIAS" "$KEY_PASS" \
+            > android/keystore.properties
+          python3 - <<'PY'
+          import re
+          path = 'android/app/build.gradle'
+          src = open(path, encoding='utf-8').read()
+          if 'keystoreProperties' not in src:
+              src = src.replace(
+                  'android {',
+                  "def keystoreProperties = new Properties()\n"
+                  "def keystorePropertiesFile = rootProject.file('keystore.properties')\n"
+                  "if (keystorePropertiesFile.exists()) {\n"
+                  "    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))\n"
+                  "}\n\n"
+                  "android {",
+                  1,
+              )
+              src = src.replace(
+                  'signingConfigs {\n        debug {',
+                  'signingConfigs {\n        release {\n'
+                  "            storeFile file(keystoreProperties['storeFile'])\n"
+                  "            storePassword keystoreProperties['storePassword']\n"
+                  "            keyAlias keystoreProperties['keyAlias']\n"
+                  "            keyPassword keystoreProperties['keyPassword']\n"
+                  '        }\n        debug {',
+                  1,
+              )
+              src = re.sub(
+                  r'(\brelease \{\n.*?)signingConfig signingConfigs\.debug',
+                  r'\1signingConfig signingConfigs.release',
+                  src,
+                  count=1,
+                  flags=re.S,
+              )
+              open(path, 'w', encoding='utf-8').write(src)
+              ok = 'keystoreProperties' in src and 'signingConfigs.release' in src
+          else:
+              ok = True
+          if not ok:
+              print('!! build.gradle yamalanamadi — debug imzasi ile devam ediliyor')
+          else:
+              print('Imza yapilandirmasi tamam')
+          PY
+
+      # 8. ADIM: Gradle ile APK + AAB derle
+      # versionCode her build'de run_number ile artar (Play yüklemesi şartı).
+      - name: APK + AAB Derle (Gradle)
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease bundleRelease --no-daemon \
+            -Pandroid.injected.versionCode=${{ github.run_number }}
+          ls -la app/build/outputs/apk/release/ app/build/outputs/bundle/release/
 
-      # 8. ADIM: Oluşan APK'yı GitHub Actions sekmesine indirme linki olarak yüklüyoruz
-      - name: APK Dosyasını Kaydet (Artifact)
+      # 9. ADIM: Oluşan dosyaları GitHub Actions sekmesine indirme linki olarak yüklüyoruz
+      - name: APK + AAB Dosyalarını Kaydet (Artifact)
         uses: actions/upload-artifact@v4
         with:
           name: HabitTracker-App-Release
-          path: android/app/build/outputs/apk/release/app-release.apk
+          path: |
+            android/app/build/outputs/apk/release/app-release.apk
+            android/app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
 
-      # 9. ADIM: APK'yı GitHub Release'e ekliyoruz (sabit indirme linki)
-      # Her derlemede en yeni APK, "latest" release'ine yüklenir.
-      # İndirme linki: https://github.com/P4SH4-28/HabitTracker/releases/latest/download/HabitTracker.apk
-      - name: Release Oluştur (Latest APK)
+      # 10. ADIM: APK + AAB'yi GitHub Release'e ekliyoruz (sabit indirme linki)
+      # Her derlemede en yeni dosyalar "latest" release'ine yüklenir.
+      # İndirme linkleri:
+      #   APK: https://github.com/P4SH4-28/HabitTracker/releases/latest/download/HabitTracker.apk
+      #   AAB: https://github.com/P4SH4-28/HabitTracker/releases/latest/download/app-release.aab
+      - name: Release Oluştur (Latest APK + AAB)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: En Son APK (Build #${{ github.run_number }})
+          name: En Son Sürüm (Build #${{ github.run_number }})
           body: |
-            Otomatik derlenen en güncel APK.
+            Otomatik derlenen en güncel sürüm.
 
-            - İndirme linki: `https://github.com/P4SH4-28/HabitTracker/releases/latest/download/HabitTracker.apk`
+            - APK (telefon kurulumu): `https://github.com/P4SH4-28/HabitTracker/releases/latest/download/HabitTracker.apk`
+            - AAB (Play Store yüklemesi): `https://github.com/P4SH4-28/HabitTracker/releases/latest/download/app-release.aab`
             - Build zamanı: $(date -u)
-          files: android/app/build/outputs/apk/release/app-release.apk
+          files: |
+            android/app/build/outputs/apk/release/app-release.apk
+            android/app/build/outputs/bundle/release/app-release.aab
           make_latest: 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 10. ADIM: APK'yı depo kök dizinine kopyalayıp main dalına itiyoruz.
+      # 11. ADIM: APK'yı depo kök dizinine kopyalayıp main dalına itiyoruz.
       # Böylece README'nin altında dosya listesinde "HabitTracker.apk" görünür
       # ve GitHub'dan tek tıkla indirilebilir.
       - name: APK'yı Depoya Geri Yükle (README Yanına)

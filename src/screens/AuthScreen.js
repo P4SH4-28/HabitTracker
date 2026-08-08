@@ -1,9 +1,8 @@
 // ============================================================
 // AuthScreen — Hesap girişi / kaydı (isim + şifre)
-// Uygulama açılışında gösterilir:
-// - Hesap yoksa (status "signup"): kayıt formu
-// - Hesap varsa (status "login"): giriş formu
-// Başarılı kayıt/giriş sonrası App.js ana sekmeleri gösterir.
+// Ek akışlar:
+// - Kayıt sonrası kurtarma anahtarı tek sefer gösterilir (kaydedilmeli).
+// - "Şifremi unuttum": isim + kurtarma anahtarıyla yeni şifre belirlenir.
 // ============================================================
 import { useMemo, useState } from 'react';
 import {
@@ -19,13 +18,37 @@ import { useAuth } from '../context/AuthContext';
 import BackgroundPattern from '../components/BackgroundPattern';
 import { useTheme } from '../theme';
 
+// Kayıt sonrası gösterilen kurtarma anahtarı ekranı (tek sefer).
+function RecoveryKeyModal({ recoveryKey, onDone }) {
+  const { colors: C } = useTheme();
+  const styles = useMemo(() => makeStyles(C), [C]);
+  return (
+    <View style={styles.overlay}>
+      <View style={[styles.card, styles.recoveryCard]}>
+        <Text style={styles.recoveryEmoji}>🔑</Text>
+        <Text style={styles.recoveryTitle}>Kurtarma anahtarın!</Text>
+        <Text style={styles.recoveryKeyText}>{recoveryKey}</Text>
+        <Text style={styles.recoveryWarn}>
+          Bu anahtarı BİR YERE YAZ. Şifreni unutursan veya cihazını kaybedersen hesabına ancak
+          bu anahtarla yeniden girersin. Anahtar kaybolursa hesap kurtarılamaz.
+        </Text>
+        <Pressable style={styles.button} onPress={onDone}>
+          <Text style={styles.buttonText}>Anladım, kaydettim</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 export default function AuthScreen() {
   const { colors: C } = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
-  const { status, register, login } = useAuth();
+  const { status, register, confirmRegister, login, resetPassword } = useAuth();
   // "mode": kullanıcı kayıt ↔ giriş ekranı arasında geçiş yapabilir.
   // null = cihazdaki duruma göre (hesap yoksa kayıt, varsa giriş).
   const [mode, setMode] = useState(null);
+  // "view": 'auth' (normal form) | 'recover' (şifre kurtarma formu).
+  const [view, setView] = useState('auth');
   const signup = mode === 'login' ? false : status === 'signup';
 
   const [name, setName] = useState('');
@@ -33,6 +56,8 @@ export default function AuthScreen() {
   const [password2, setPassword2] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // Kayıt sonrası gösterilecek kurtarma anahtarı (null = gösterilmiyor).
+  const [recoveryKey, setRecoveryKey] = useState(null);
 
   const submit = async () => {
     setError('');
@@ -40,9 +65,29 @@ export default function AuthScreen() {
     if (password.length < 4) return setError('Şifre en az 4 karakter olmalı');
     if (signup && password !== password2) return setError('Şifreler eşleşmiyor');
     setBusy(true);
-    const result = signup
-      ? await register(name, password)
-      : await login(name, password);
+    const result = signup ? await register(name, password) : await login(name, password);
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    // Kayıt: önce kurtarma anahtarını göster, sonra oturum açılır.
+    if (signup && result.recoveryKey) setRecoveryKey(result.recoveryKey);
+  };
+
+  // "Şifremi unuttum" formu: isim + anahtar + yeni şifre (+ tekrar).
+  // Alanlar sırasıyla name / password / password2 / password3'te değil:
+  // kurtarma formunda "password" anahtar, "password2" yeni şifre,
+  // "password3" yeni şifre tekrarıdır.
+  const [password3, setPassword3] = useState('');
+
+  const submitRecover = async () => {
+    setError('');
+    if (!name.trim()) return setError('İsim girmelisin');
+    if (password2.length < 4) return setError('Yeni şifre en az 4 karakter olmalı');
+    if (password2 !== password3) return setError('Yeni şifreler eşleşmiyor');
+    setBusy(true);
+    const result = await resetPassword(name, password, password2);
     setBusy(false);
     if (!result.ok) setError(result.error);
   };
@@ -58,16 +103,24 @@ export default function AuthScreen() {
           <Text style={styles.logoEmoji}>🎯</Text>
           <Text style={styles.logoTitle}>Habit Tracker</Text>
           <Text style={styles.logoSub}>
-            {signup ? 'Hesabını oluştur, alışkanlıkların seni bekliyor' : 'Tekrar hoş geldin!'}
+            {view === 'recover'
+              ? 'Kurtarma anahtarınla şifreni yenile'
+              : signup
+                ? 'Hesabını oluştur, alışkanlıkların seni bekliyor'
+                : 'Tekrar hoş geldin!'}
           </Text>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.formTitle}>{signup ? 'Kayıt Ol' : 'Giriş Yap'}</Text>
+          <Text style={styles.formTitle}>
+            {view === 'recover' ? 'Şifre Sıfırlama' : signup ? 'Kayıt Ol' : 'Giriş Yap'}
+          </Text>
           <Text style={styles.formDesc}>
-            {signup
-              ? 'İsim ve şifrenle yeni hesap açarsın.'
-              : 'İsim ve şifrenle devam edersin.'}
+            {view === 'recover'
+              ? 'İsim + kurtarma anahtarı gir, yeni şifreni belirle.'
+              : signup
+                ? 'İsim ve şifrenle yeni hesap açarsın.'
+                : 'İsim ve şifrenle devam edersin.'}
           </Text>
 
           <TextInput
@@ -79,52 +132,135 @@ export default function AuthScreen() {
             autoCapitalize="words"
             autoCorrect={false}
           />
-          <TextInput
-            style={styles.input}
-            placeholder="Şifre"
-            placeholderTextColor={C.textMuted}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
-          {signup && (
-            <TextInput
-              style={styles.input}
-              placeholder="Şifre (tekrar)"
-              placeholderTextColor={C.textMuted}
-              value={password2}
-              onChangeText={setPassword2}
-              secureTextEntry
-            />
+
+          {view === 'recover' ? (
+            <>
+              <TextInput
+                style={styles.input}
+                placeholder="Kurtarma anahtarı (ör. X7K3-Q9MF)"
+                placeholderTextColor={C.textMuted}
+                value={password}
+                onChangeText={setPassword}
+                autoCapitalize="characters"
+                autoCorrect={false}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Yeni şifre"
+                placeholderTextColor={C.textMuted}
+                value={password2}
+                onChangeText={setPassword2}
+                secureTextEntry
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Yeni şifre (tekrar)"
+                placeholderTextColor={C.textMuted}
+                value={password3}
+                onChangeText={setPassword3}
+                secureTextEntry
+              />
+            </>
+          ) : (
+            <>
+              <TextInput
+                style={styles.input}
+                placeholder="Şifre"
+                placeholderTextColor={C.textMuted}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+              />
+              {signup && (
+                <TextInput
+                  style={styles.input}
+                  placeholder="Şifre (tekrar)"
+                  placeholderTextColor={C.textMuted}
+                  value={password2}
+                  onChangeText={setPassword2}
+                  secureTextEntry
+                />
+              )}
+            </>
           )}
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
-          <Pressable
-            style={[styles.button, busy && styles.buttonBusy]}
-            onPress={submit}
-            disabled={busy}
-          >
-            <Text style={styles.buttonText}>{signup ? 'Kayıt Ol' : 'Giriş Yap'}</Text>
-          </Pressable>
+          {view === 'recover' ? (
+            <Pressable
+              style={[styles.button, busy && styles.buttonBusy]}
+              onPress={submitRecover}
+              disabled={busy}
+            >
+              <Text style={styles.buttonText}>Şifreyi Sıfırla</Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              style={[styles.button, busy && styles.buttonBusy]}
+              onPress={submit}
+              disabled={busy}
+            >
+              <Text style={styles.buttonText}>{signup ? 'Kayıt Ol' : 'Giriş Yap'}</Text>
+            </Pressable>
+          )}
 
-          <Text style={styles.hint}>
-            {signup
-              ? 'Bu cihazda yalnızca bir hesap olabilir.'
-              : 'Şifreni unuttuysan verileri sıfırlaman gerekir.'}
-          </Text>
-
-          <Pressable
-            style={styles.switchRow}
-            onPress={() => setMode(signup ? 'login' : 'signup')}
-            hitSlop={8}
-          >
-            <Text style={styles.switchText}>
-              {signup ? 'Hesabın var mı? Giriş yap' : 'Hesabın yok mu? Kayıt ol'}
-            </Text>
-          </Pressable>
+          {view === 'recover' ? (
+            <Pressable
+              style={styles.switchRow}
+              onPress={() => {
+                setView('auth');
+                setError('');
+              }}
+              hitSlop={8}
+            >
+              <Text style={styles.switchText}>← Giriş ekranına dön</Text>
+            </Pressable>
+          ) : (
+            <>
+              {!signup && (
+                <Pressable
+                  style={styles.switchRow}
+                  onPress={() => {
+                    setView('recover');
+                    setError('');
+                    setPassword('');
+                    setPassword2('');
+                    setPassword3('');
+                  }}
+                  hitSlop={8}
+                >
+                  <Text style={styles.forgotText}>Şifremi unuttum</Text>
+                </Pressable>
+              )}
+              <Text style={styles.hint}>
+                {signup
+                  ? 'Bu cihazda yalnızca bir hesap olabilir.'
+                  : 'Şifreni unuttuysan kurtarma anahtarınla sıfırlayabilirsin.'}
+              </Text>
+              <Pressable
+                style={styles.switchRow}
+                onPress={() => setMode(signup ? 'login' : 'signup')}
+                hitSlop={8}
+              >
+                <Text style={styles.switchText}>
+                  {signup ? 'Hesabın var mı? Giriş yap' : 'Hesabın yok mu? Kayıt ol'}
+                </Text>
+              </Pressable>
+            </>
+          )}
         </View>
       </KeyboardAvoidingView>
+
+      {/* Kayıt sonrası kurtarma anahtarı ekranı (tek sefer). */}
+      {recoveryKey ? (
+        <RecoveryKeyModal
+          recoveryKey={recoveryKey}
+          onDone={() => {
+            setRecoveryKey(null);
+            confirmRegister();
+          }}
+        />
+      ) : null}
     </View>
   );
 }
@@ -221,6 +357,51 @@ function makeStyles(C) {
       color: C.primary,
       fontSize: 13,
       fontWeight: '700',
+    },
+    forgotText: {
+      color: C.primary,
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    overlay: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: 'rgba(0,0,0,0.7)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 24,
+      zIndex: 10,
+    },
+    recoveryCard: {
+      width: '100%',
+      maxWidth: 380,
+      alignItems: 'center',
+      gap: 14,
+      padding: 24,
+    },
+    recoveryEmoji: {
+      fontSize: 48,
+    },
+    recoveryTitle: {
+      color: C.text,
+      fontSize: 20,
+      fontWeight: '800',
+    },
+    recoveryKeyText: {
+      color: C.primary,
+      fontSize: 26,
+      fontWeight: '900',
+      letterSpacing: 3,
+      backgroundColor: C.surfaceLight,
+      borderRadius: 12,
+      paddingHorizontal: 20,
+      paddingVertical: 10,
+      overflow: 'hidden',
+    },
+    recoveryWarn: {
+      color: C.textMuted,
+      fontSize: 12,
+      lineHeight: 19,
+      textAlign: 'center',
     },
   });
 }

@@ -198,14 +198,43 @@ export function synthesizeActivities(streak, today) {
 // Pomodoro zamanlayıcının varsayılan süresi: 25 dakika (milisaniye cinsinden).
 export const POMODORO_DURATION_MS = 25 * 60 * 1000;
 
-// ---------- Anti-farm ekonomi kuralları (Katman 1) ----------
-// Kullanıcılar sahte alışkanlık oluşturup günlük XP/altın farm'ı
-// yapamasın diye günlük KAZANÇ tavanları uygulanır. Tavan aşılınca
-// XP/altın verilmez ama tamamlama sayılır (seri ve görev ilerlemesi
-// korunur; yalnızca ödül kesilir). Sayılar ayarlarda değiştirilebilir.
+// Anti-farm (Katman 1): günlük kazanç tavanına ek olarak aktif alışkanlık
+// sınırı. Sayılar ayarlarda değiştirilebilir.
 export const DAILY_XP_CAP = 500;
 export const DAILY_GOLD_CAP = 150;
 export const MAX_ACTIVE_HABITS = 10;
+
+// ---------- Seri (streak) ödülleri ----------
+// Belirli seri eşiklerine ulaşan alışkanlık, günlük tamamlama ödülüne ek
+// olarak BONUS XP + altın kazandırır. Eşik başına yalnızca BİR kez ödenir
+// (DataContext, alışkanlık başına en son ödüllenen eşiği izler); seri
+// korundukça tekrar tekrar ödül alınamaz → farm koruması bozulmaz.
+// Bonus da günlük tavan içinde sayılır (Katman 1).
+export const STREAK_BONUSES = [
+  { days: 3, xp: 10, gold: 5 },
+  { days: 7, xp: 25, gold: 10 },
+  { days: 14, xp: 50, gold: 20 },
+  { days: 30, xp: 100, gold: 40 },
+  { days: 60, xp: 200, gold: 75 },
+];
+
+// "day" günlük seri için bir ödül eşiği varsa döndürür; yoksa null.
+export function streakBonusFor(day) {
+  return STREAK_BONUSES.find((b) => b.days === day) || null;
+}
+
+// ---------- Kurtarma anahtarı üretici ----------
+// Kayıtta kullanıcıya gösterilen 8 karakterlik kurtarma anahtarı
+// (ör. "X7K3-Q9MF"). Karışıklığa yol açan harfler çıkarıldı.
+// Anahtar düz metin olarak saklanmaz; hash'i cihazda ve sunucuda tutulur.
+export function makeRecoveryKey() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let s = '';
+  for (let i = 0; i < 8; i += 1) {
+    s += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return `${s.slice(0, 4)}-${s.slice(4)}`;
+}
 
 // Milisaniyeyi "dk:ss" biçiminde gösterir (örn. 1_499_000 → "24:59").
 export function formatDuration(ms) {

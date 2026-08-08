@@ -15,6 +15,7 @@ import {
 } from 'react';
 import { AppState } from 'react-native';
 import {
+  calcStreak,
   DAILY_GOLD_CAP,
   DAILY_XP_CAP,
   dateKey,
@@ -22,6 +23,7 @@ import {
   levelFromTotalXp,
   MAX_ACTIVE_HABITS,
   POMODORO_DURATION_MS,
+  streakBonusFor,
   todayKey,
 } from '../logic';
 import { loadServerClock, serverNow } from '../services/serverClock';
@@ -50,6 +52,13 @@ import {
   removeFriend as supabaseRemoveFriend,
   sendFriendRequest,
 } from '../services/friendService';
+import {
+  acceptDuel as acceptDuelReq,
+  challengeFriend,
+  declineDuel as declineDuelReq,
+  finishDuel as finishDuelReq,
+  getMyDuels,
+} from '../services/duelService';
 import { getLeaderboardData } from '../services/leaderboardService';
 import { getServerProfile, updateProfileData } from '../services/profileService';
 
@@ -73,8 +82,10 @@ const INITIAL_STATE = {
     gold: 0,
     // Günlük görev sayaçları: gün anahtarı değişince sıfırlanır (bkz. quests.js).
     day: { key: null, completions: 0, pomodoro: 0, goldEarned: 0 },
+    // Seri ödülü: alışkanlık başına en son ödüllenen seri eşiği (farm koruması).
+    streakAwards: {},
   },
-  settings: { xpPerHabit: 25, pomodoroXp: 50, avatarId: 'av_fox', themeId: 'dark', devOffset: 0, frameId: null, penaltyEnabled: true, reminderHour: null },
+    settings: { xpPerHabit: 25, pomodoroXp: 50, avatarId: 'av_fox', themeId: 'dark', devOffset: 0, frameId: null, penaltyEnabled: true, reminderHour: null, osNotify: false },
   friends: [],
   players: [],
   // Açılmış başarımların id listesi (AsyncStorage'a otomatik kaydedilir).
@@ -146,6 +157,7 @@ export function DataProvider({ children }) {
     leaderboard: [],
     friends: [],
     requests: [],
+    duels: [],
     banned: false,
     banReason: null,
   });
@@ -249,6 +261,7 @@ export function DataProvider({ children }) {
               pomodoroCount: parsed.stats?.pomodoroCount || 0,
               gold: parsed.stats?.gold || 0,
               day: parsed.stats?.day || INITIAL_STATE.stats.day,
+              streakAwards: parsed.stats?.streakAwards || {},
             },
             settings: { ...INITIAL_STATE.settings, ...(parsed.settings || {}) },
             friends: serverCacheRef.current
@@ -448,7 +461,7 @@ export function DataProvider({ children }) {
       setData({
         ...INITIAL_STATE,
         ...saved,
-        stats: { ...INITIAL_STATE.stats, ...(saved.stats || {}) },
+        stats: { ...INITIAL_STATE.stats, ...(saved.stats || {}), streakAwards: saved.stats?.streakAwards || {} },
         settings: { ...INITIAL_STATE.settings, ...(saved.settings || {}) },
         pomodoro: { ...INITIAL_STATE.pomodoro, ...(saved.pomodoro || {}) },
       });
@@ -564,6 +577,9 @@ export function DataProvider({ children }) {
       let totalGold = d.stats.gold || 0;
       // Günlük görev sayaçlarına işlenecek değişim (tamamla/geri al).
       let dayDelta = { completions: 0, goldEarned: 0, xpEarned: 0 };
+      // Seri ödülü tost bildirimi (updater dışına taşınır).
+      let streakToast = null;
+      const streakAwards = { ...(d.stats.streakAwards || {}) };
       const habits = d.habits.map((h) => {
         if (h.id !== id) return h;
         const done = h.completedDates.includes(today);
@@ -577,9 +593,28 @@ export function DataProvider({ children }) {
           // tamamlama yine de sayılır (seri + görev ilerlemesi korunur).
           const xpGain = Math.min(xp, Math.max(0, DAILY_XP_CAP - dayBase.xpEarned));
           const goldGain = Math.min(gold, Math.max(0, DAILY_GOLD_CAP - dayBase.goldEarned));
-          totalXp += xpGain;
-          totalGold += goldGain;
-          dayDelta = { completions: 1, goldEarned: goldGain, xpEarned: xpGain };
+          // SERİ ÖDÜLÜ: 3/7/14/30/60 gün eşikleri yakalanınca bonus XP+altın.
+          // streakAwards alışkanlık başına en son ödüllenen eşiği tutar;
+          // seri korunsa bile aynı eşik bir daha ödenmez (farm koruması).
+          const newDates = [...h.completedDates, today];
+          const newStreak = calcStreak(newDates, today);
+          const awarded = streakAwards[id] || 0;
+          const bonus = newStreak > awarded ? streakBonusFor(newStreak) : null;
+          let bonusXp = 0;
+          let bonusGold = 0;
+          if (bonus) {
+            bonusXp = Math.min(bonus.xp, Math.max(0, DAILY_XP_CAP - dayBase.xpEarned - xpGain));
+            bonusGold = Math.min(bonus.gold, Math.max(0, DAILY_GOLD_CAP - dayBase.goldEarned - goldGain));
+            streakAwards[id] = newStreak;
+            streakToast = { streak: newStreak, xp: bonusXp, gold: bonusGold };
+          }
+          totalXp += xpGain + bonusXp;
+          totalGold += goldGain + bonusGold;
+          dayDelta = {
+            completions: 1,
+            goldEarned: goldGain + bonusGold,
+            xpEarned: xpGain + bonusXp,
+          };
         }
         return {
           ...h,
@@ -588,9 +623,23 @@ export function DataProvider({ children }) {
             : [...h.completedDates, today],
         };
       });
+      // Seri ödülü bildirimi (updater içinde side effect yapılmaz).
+      if (streakToast) {
+        queueMicrotask(() => {
+          setToasts((prev) => [
+            ...prev,
+            {
+              key: `streak_${id}_${Date.now()}`,
+              icon: '🔥',
+              title: `${streakToast.streak} günlük seri! +${streakToast.xp} XP, +${streakToast.gold} 🪙`,
+              color: COLORS.danger,
+            },
+          ]);
+        });
+      }
       // Görev sayaçlarını güncelle (gün değiştiyse otomatik sıfırlanır).
       const stats = bumpDay(
-        { ...d.stats, totalXp, gold: totalGold },
+        { ...d.stats, totalXp, gold: totalGold, streakAwards },
         today,
         dayDelta
       );
@@ -689,15 +738,17 @@ export function DataProvider({ children }) {
 
   const pullServer = useCallback(async () => {
     const name = authRef.current?.name || dataRef.current?.settings.name || 'Kullanıcı';
-    const [lb, fr, rq] = await Promise.all([
+    const [lb, fr, rq, dl] = await Promise.all([
       getLeaderboardData(name),
       getFriends(name),
       getFriendRequests(name),
+      getMyDuels(name),
     ]);
     if (!lb.ok) return false;
     const board = (lb.leaderboard || []).map(profileToPlayer);
     let friends = fr.ok ? (fr.friends || []).map(profileToPlayer) : [];
     let requests = rq.ok ? (rq.requests || []) : [];
+    let duels = dl.ok ? (dl.duels || []) : [];
     const gotMeta = fr.ok && rq.ok;
     // Yeni gelen istekler için tek seferlik bildirim (toast).
     if (requests.length > 0) {
@@ -725,6 +776,7 @@ export function DataProvider({ children }) {
       leaderboard: board,
       friends: friendsMapped,
       requests,
+      duels,
       lastSync: savedAt,
     };
     setServer((s) => ({ ...s, ...patch, connected: true }));
@@ -866,6 +918,87 @@ export function DataProvider({ children }) {
     return { ok: false, state: r.state || 'error', error: r.error || 'İstek gönderilemedi' };
   }, []);
 
+  // ---------- Düello eylemleri (7 günlük XP yarışı) ----------
+  // Tüm kararlar "duel-action" edge function'ında (servis rolüyle) alınır;
+  // burada yalnızca çağrı + sonuç listesini tazeleme yapılır.
+
+  // Arkadaşını düelloya davet eder.
+  const challengeDuel = useCallback(
+    async (opponent) => {
+      const me = authRef.current?.name || dataRef.current?.settings.name || 'Kullanıcı';
+      const r = await challengeFriend(me, opponent);
+      if (r.ok) {
+        await pullServer();
+        return { ok: true };
+      }
+      return { ok: false, error: r.error || 'Düello başlatılamadı' };
+    },
+    [pullServer]
+  );
+
+  // Gelen daveti kabul eder (düello aktifleşir).
+  const acceptDuel = useCallback(
+    async (duelId) => {
+      const me = authRef.current?.name || dataRef.current?.settings.name || 'Kullanıcı';
+      const r = await acceptDuelReq(me, duelId);
+      if (r.ok) {
+        await pullServer();
+        return { ok: true };
+      }
+      return { ok: false, error: r.error || 'Düello kabul edilemedi' };
+    },
+    [pullServer]
+  );
+
+  // Gelen daveti reddeder.
+  const declineDuel = useCallback(
+    async (duelId) => {
+      const me = authRef.current?.name || dataRef.current?.settings.name || 'Kullanıcı';
+      const r = await declineDuelReq(me, duelId);
+      if (r.ok) {
+        await pullServer();
+        return { ok: true };
+      }
+      return { ok: false, error: r.error || 'Düello reddedilemedi' };
+    },
+    [pullServer]
+  );
+
+  // Bitiş saatinden sonra kazananı belirletir; sunucu ödülü verir.
+  // Sonuç: { ok, winner, reward } — kazanan bensem +XP/altın tost atılır.
+  const finishDuel = useCallback(
+    async (duelId) => {
+      const me = authRef.current?.name || dataRef.current?.settings.name || 'Kullanıcı';
+      const r = await finishDuelReq(me, duelId);
+      if (!r.ok) return { ok: false, error: r.error || 'Düello bitirilemedi' };
+      await pullServer();
+      const d = r.data || {};
+      if (d.winner && d.winner === me && d.reward) {
+        setToasts((prev) => [
+          ...prev,
+          {
+            key: `duel_win_${Date.now()}`,
+            icon: '⚔️',
+            title: `Düelloyu kazandın! +${d.reward.xp} XP, +${d.reward.gold} 🪙`,
+            color: COLORS.gold,
+          },
+        ]);
+      } else if (d.winner && d.winner !== me) {
+        setToasts((prev) => [
+          ...prev,
+          {
+            key: `duel_lose_${Date.now()}`,
+            icon: '⚔️',
+            title: `Düelloyu ${d.winner} kazandı — bir dahaki sefere!`,
+            color: COLORS.danger,
+          },
+        ]);
+      }
+      return { ok: true, winner: d.winner || null, reward: d.reward || null };
+    },
+    [pullServer]
+  );
+
   // Sunucudan veriyi elle tazeler (profil yayınlar + her şeyi çeker).
   const refreshServer = useCallback(async () => {
     await runSync();
@@ -888,6 +1021,16 @@ export function DataProvider({ children }) {
         ...d.settings,
         reminderHour: hour == null ? null : Math.min(23, Math.max(0, hour)),
       },
+    }));
+  }, []);
+
+  // OS bildirimi ("Kapalıyken de hatırlatsın") anahtarını kalıcı yapar.
+  // Bildirimin planlanması/iptali SettingsScreen tarafında yapılır;
+  // burada yalnızca ayar durumu kaydedilir.
+  const setOsNotify = useCallback((value) => {
+    setData((d) => ({
+      ...d,
+      settings: { ...d.settings, osNotify: !!value },
     }));
   }, []);
 
@@ -1160,8 +1303,13 @@ export function DataProvider({ children }) {
       acceptRequest,
       declineRequest,
       removeFriend,
+      challengeDuel,
+      acceptDuel,
+      declineDuel,
+      finishDuel,
       setPenaltyEnabled,
       setReminderHour,
+      setOsNotify,
       backupData,
       restoreData,
       backupTs,
@@ -1198,8 +1346,13 @@ export function DataProvider({ children }) {
       acceptRequest,
       declineRequest,
       removeFriend,
+      challengeDuel,
+      acceptDuel,
+      declineDuel,
+      finishDuel,
       setPenaltyEnabled,
       setReminderHour,
+      setOsNotify,
       backupData,
       restoreData,
       backupTs,

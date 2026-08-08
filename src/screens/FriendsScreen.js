@@ -3,6 +3,7 @@ import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import AddFriendModal from '../components/AddFriendModal';
 import AvatarCircle from '../components/AvatarCircle';
 import { confirmDialog } from '../components/HabitCard';
+import DuelCard from '../components/DuelCard';
 import PlayerProfileModal from '../components/PlayerProfileModal';
 import { useData } from '../context/DataContext';
 import { useTheme } from '../theme';
@@ -10,10 +11,46 @@ import { useTheme } from '../theme';
 export default function FriendsScreen() {
   const { colors: C } = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
-  const { data, today, removeFriend } = useData();
+  const {
+    data,
+    today,
+    removeFriend,
+    server,
+    challengeDuel,
+    acceptDuel,
+    declineDuel,
+    finishDuel,
+  } = useData();
   const [modalVisible, setModalVisible] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [busyDuel, setBusyDuel] = useState(null);
 
+  // Düello daveti gönderir (arkadaş satırındaki ⚔️ butonu).
+  const startDuel = async (name) => {
+    confirmDialog(
+      'Düello daveti',
+      `${name} ile 7 günlük XP yarışı başlatılsın mı? Kazanan +100 XP ve +50 🪙 kazanır.`,
+      async () => {
+        const r = await challengeDuel(name);
+        if (!r.ok && r.error) confirmDialog('Bilgi', r.error, null);
+      }
+    );
+  };
+
+  // Düelloyu bitir: sonucu göster (berabere bilgisi dahil).
+  const handleFinish = async (duel) => {
+    setBusyDuel(duel.id);
+    const r = await finishDuel(duel.id);
+    setBusyDuel(null);
+    if (r.ok && !r.winner) {
+      confirmDialog('Düello bitti', 'Berabere! İkiniz de aynı XP kazandınız.', null);
+    } else if (!r.ok && r.error) {
+      confirmDialog('Bilgi', r.error, null);
+    }
+  };
+
+  // Başlık: düello kartları (varsa) + arkadaş listesi.
+  const duels = server.duels || [];
   const header = (
     <View style={styles.header}>
       <View style={styles.titleRow}>
@@ -25,11 +62,24 @@ export default function FriendsScreen() {
           <Text style={styles.addButtonText}>+ Ekle</Text>
         </Pressable>
       </View>
+      {duels.length > 0 && (
+        <View style={styles.duelSection}>
+          {duels.map((d) => (
+            <DuelCard
+              key={d.id}
+              duel={d}
+              onAccept={(id) => acceptDuel(id)}
+              onDecline={(id) => declineDuel(id)}
+              onFinish={() => handleFinish(d)}
+            />
+          ))}
+        </View>
+      )}
       {data.friends.length > 0 && (
         <View style={styles.noteBox}>
           <Text style={styles.noteText}>
-            💡 Arkadaşına dokunarak profilini ziyaret edebilir, gelişimini görebilirsin.
-            Uzun basarak silersin. Liderlik tablosundan da arkadaşlık isteği gönderebilirsin.
+            💡 Arkadaşına dokunarak profilini ziyaret edebilir, ⚔️ ile 7 günlük düello
+            başlatabilirsin. Liderlik tablosundan da arkadaşlık isteği gönderebilirsin.
           </Text>
         </View>
       )}
@@ -78,6 +128,13 @@ export default function FriendsScreen() {
                 </View>
               </View>
               <Text style={styles.profileChevron}>›</Text>
+              <Pressable
+                style={styles.duelBtn}
+                onPress={() => startDuel(item.name)}
+                hitSlop={6}
+              >
+                <Text style={styles.duelBtnText}>⚔️</Text>
+              </Pressable>
               <View
                 style={[
                   styles.statusDot,
@@ -178,6 +235,18 @@ function makeStyles(C) {
       color: C.textMuted,
       fontSize: 18,
       fontWeight: '700',
+    },
+    duelBtn: {
+      backgroundColor: C.surfaceLight,
+      borderRadius: 10,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+    },
+    duelBtnText: {
+      fontSize: 14,
+    },
+    duelSection: {
+      gap: 10,
     },
     info: {
       flex: 1,
