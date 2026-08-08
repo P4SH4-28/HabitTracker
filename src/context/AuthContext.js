@@ -40,38 +40,46 @@ export function AuthProvider({ children }) {
   // status: yükleme tamamlanınca "signup" veya "login" olur.
   const [status, setStatus] = useState('signup');
   const [user, setUser] = useState(null);
+  // ready: açılışta oturum/hesap AsyncStorage'dan OKUNDU mu? DataContext
+  // bu bayrağı bekler (authReady); olmadan veri yüklemeye başlamaz.
+  const [ready, setReady] = useState(false);
 
   // Açılışta kayıtlı oturumu oku: "beni hatırla" varsa doğrudan içeri
   // girilir; yoksa kayıtlı hesap giriş ekranını, hesap yoksa kayıt ekranını açar.
   useEffect(() => {
     (async () => {
+      let nextUser = null;
+      let nextStatus = 'signup';
       try {
         const session = await AsyncStorage.getItem(SESSION_KEY);
         if (session) {
           const parsed = JSON.parse(session);
           if (parsed && typeof parsed.name === 'string' && parsed.name) {
-            setUser(parsed);
-            setStatus('in');
-            return;
+            nextUser = parsed;
+            nextStatus = 'in';
           }
         }
       } catch (e) {
         console.warn('Oturum okunamadı:', e);
       }
-      try {
-        const raw = await AsyncStorage.getItem(AUTH_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed && typeof parsed.name === 'string' && parsed.passHash) {
-            setUser(parsed);
-            setStatus('login');
-            return;
+      if (!nextUser) {
+        try {
+          const raw = await AsyncStorage.getItem(AUTH_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed.name === 'string' && parsed.passHash) {
+              nextUser = parsed;
+              nextStatus = 'login';
+            }
           }
+        } catch (e) {
+          console.warn('Hesap bilgisi okunamadı:', e);
         }
-      } catch (e) {
-        console.warn('Hesap bilgisi okunamadı:', e);
       }
-      setStatus('signup');
+      setUser(nextUser);
+      setStatus(nextStatus);
+      // Okuma her yolda biter: DataContext artık veriyi yükleyebilir.
+      setReady(true);
     })();
   }, []);
 
@@ -247,6 +255,7 @@ export function AuthProvider({ children }) {
       value={{
         status,
         user,
+        ready,
         register,
         confirmRegister,
         login,
