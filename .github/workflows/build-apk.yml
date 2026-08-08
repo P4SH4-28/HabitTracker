@@ -6,6 +6,12 @@ on:
     branches:
       - main
       - master
+    # Yalnızca doküman/simge dışı değişikliklerde derle
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - 'supabase/**'
+      - 'supabase-*.sql'
   workflow_dispatch: # GitHub arayüzünden manuel "Çalıştır" butonu ekler
 
 jobs:
