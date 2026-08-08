@@ -15,13 +15,16 @@ import {
 } from 'react';
 import { AppState } from 'react-native';
 import {
-  bestStreak,
+  DAILY_GOLD_CAP,
+  DAILY_XP_CAP,
   dateKey,
   dayPenalty,
   levelFromTotalXp,
+  MAX_ACTIVE_HABITS,
   POMODORO_DURATION_MS,
   todayKey,
 } from '../logic';
+import { loadServerClock, serverNow } from '../services/serverClock';
 import { evaluateAchievements } from '../data/achievements';
 import {
   bumpDay,
@@ -42,14 +45,13 @@ import { useAuth } from './AuthContext';
 import {
   acceptFriendRequest,
   declineFriendRequest,
-  ensureProfile,
   getFriendRequests,
   getFriends,
-  getLeaderboard,
-  removeFriend as apiRemoveFriend,
+  removeFriend as supabaseRemoveFriend,
   sendFriendRequest,
-  updateProfile,
-} from '../services/api';
+} from '../services/friendService';
+import { getLeaderboardData } from '../services/leaderboardService';
+import { getServerProfile, updateProfileData } from '../services/profileService';
 
 // Ana depolama anahtarı. Veriye "version" alanı ekliyoruz; ileride
 // veri yapısı değişirse eski verileri migrasyonla dönüştürebileceğiz.
@@ -96,18 +98,22 @@ const INITIAL_STATE = {
 const LEADERBOARD_MIN_LEVEL = 5;
 const LEADERBOARD_MIN_XP = 1000; // 100·5·4/2 = seviye 5 için toplam XP
 
-// Sunucu profil kaydı → uygulamanın arkadaş/liderlik satırına dönüştürür.
+// Supabase profil satırı → uygulamanın arkadaş/liderlik satırına dönüştürür.
 // lastActive ISO tarih olarak gelir; karşılaştırmalar için "YYYY-MM-DD" yapılır.
 function profileToPlayer(p) {
   return {
-    id: p.token,
-    name: p.name,
-    emoji: p.emoji,
+    id: p.id,
+    name: p.username || p.name,
+    emoji: p.emoji || '😀',
     streak: p.streak || 0,
-    totalXp: p.xp || 0,
+    totalXp: p.xp ?? p.totalXp ?? 0,
     lastActive: p.lastActive ? dateKey(new Date(p.lastActive)) : null,
     avatarId: p.avatarId || null,
     frameId: p.frameId || null,
+    // Katman 4: şüpheli kullanıcı bayrağı + 7 günlük XP trendi.
+    flagged: !!p.flagged,
+    flaggedReason: p.flaggedReason || p.flagged_reason || null,
+    xp7d: p.xp7d || 0,
   };
 }
 
@@ -132,6 +138,7 @@ export function DataProvider({ children }) {
   }, [authUser]);
 
   // Sunucu durumu: bağlantı + en son senkron + liderlik/arkadaş/istek verisi.
+  // banned/banReason: hesap yasaklandıysa uygulama yasak ekranı gösterir.
   const [server, setServer] = useState({
     connected: false,
     syncing: false,
@@ -139,6 +146,8 @@ export function DataProvider({ children }) {
     leaderboard: [],
     friends: [],
     requests: [],
+    banned: false,
+    banReason: null,
   });
 
   // Seviye atlama olayı: { level, ts } — kutlama modalı bu değeri görünce açar.
@@ -156,6 +165,35 @@ export function DataProvider({ children }) {
   // Önbellek ayrıca serverCacheRef'e yazılır ki veri yükleme effect'i de
   // onu kullanabilsin (iki async etkinlik sırası garanti edilemez).
   const serverCacheRef = useRef(null);
+  // Sunucu saati referansını yükle (uygulama açılışı — Katman 2).
+  useEffect(() => {
+    loadServerClock();
+  }, []);
+  // Delta senkron köprüsü (Katman 3): sunucunun onayladığı son toplamlar.
+  // Bir sonraki sync'in deltası BUNLARDAN hesaplanır; mutlak değer değil
+  // yalnızca fark sunucuya gönderilir (saat/veri oynatma koruması).
+  // Ayrı anahtarda saklanır; sunucu önbelleğinden bağımsızdır.
+  const SYNC_ANCHOR_KEY = '@habit_tracker_v2_sync_anchor';
+  const syncAnchorRef = useRef({ initialized: false, lastSyncedXp: 0, lastSyncedGold: 0 });
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(SYNC_ANCHOR_KEY);
+        if (raw) {
+          const a = JSON.parse(raw);
+          if (a && typeof a.lastSyncedXp === 'number' && typeof a.lastSyncedGold === 'number') {
+            syncAnchorRef.current = {
+              initialized: true,
+              lastSyncedXp: a.lastSyncedXp,
+              lastSyncedGold: a.lastSyncedGold,
+            };
+          }
+        }
+      } catch (e) {
+        console.warn('Senkron köprüsü okunamadı:', e);
+      }
+    })();
+  }, []);
   useEffect(() => {
     (async () => {
       try {
@@ -421,8 +459,12 @@ export function DataProvider({ children }) {
   }, []);
 
   // Test panelinin gün kaydırma değeriyle hesaplanan "bugün" anahtarı.
+  // ZAMAN FARM'I KORUMASI: ekonomi kararı SUNUCU saatine dayanır
+  // (serverClock). Cihaz saati ileri alınsa bile "bugün" sunucuya göre
+  // hesaplanır; böylece aynı gün tekrarı çifte ödül vermez. Gün kayması
+  // (devOffset) yalnızca test/panel amaçlıdır ve sunucu saatine eklenir.
   const offsetToday = useCallback(
-    () => todayKey(settingsRef.current.devOffset || 0),
+    () => todayKey(settingsRef.current.devOffset || 0, serverNow()),
     []
   );
 
@@ -484,7 +526,13 @@ export function DataProvider({ children }) {
   // ---------- Eylemler (actions) ----------
 
   // Yeni alışkanlık ekler. Emoji ve renk kullanıcının seçimidir.
+  // Anti-farm (Katman 1): aktif alışkanlık sayısı MAX_ACTIVE_HABITS ile
+  // sınırlıdır — sınırsız alışkanlık + toplu tamamlama = sınırsız XP/altın
+  // farm'ını engeller. Limit aşılınca { ok:false } döner (modal uyarır).
   const addHabit = useCallback((name, emoji, color) => {
+    if (dataRef.current.habits.length >= MAX_ACTIVE_HABITS) {
+      return { ok: false, error: `En fazla ${MAX_ACTIVE_HABITS} alışkanlık oluşturabilirsin` };
+    }
     const habit = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       name,
@@ -494,6 +542,7 @@ export function DataProvider({ children }) {
       completedDates: [],
     };
     setData((d) => ({ ...d, habits: [habit, ...d.habits] }));
+    return { ok: true };
   }, []);
 
   // Alışkanlığı tamamlar veya (aynı gün tekrar dokunursa) tamamlamayı geri alır.
@@ -506,19 +555,32 @@ export function DataProvider({ children }) {
       const today = offsetToday();
       const xp = d.settings.xpPerHabit;
       const gold = GOLD_RATES.habit;
+      // Günlük tavan hesabı için bugünün sayaçları (gün değiştiyse sıfır).
+      const dayBase =
+        d.stats.day && d.stats.day.key === today
+          ? d.stats.day
+          : { key: today, completions: 0, pomodoro: 0, goldEarned: 0, xpEarned: 0 };
       let totalXp = d.stats.totalXp;
       let totalGold = d.stats.gold || 0;
       // Günlük görev sayaçlarına işlenecek değişim (tamamla/geri al).
-      let dayDelta = { completions: 0, goldEarned: 0 };
+      let dayDelta = { completions: 0, goldEarned: 0, xpEarned: 0 };
       const habits = d.habits.map((h) => {
         if (h.id !== id) return h;
         const done = h.completedDates.includes(today);
-        totalXp = done ? Math.max(0, totalXp - xp) : totalXp + xp;
-        // Altın: tamamlayınca kazanılır, geri alınca (0'ın altına düşmeden) iade edilir.
-        totalGold = done ? Math.max(0, totalGold - gold) : totalGold + gold;
-        dayDelta = done
-          ? { completions: -1, goldEarned: -gold }
-          : { completions: 1, goldEarned: gold };
+        if (done) {
+          // Geri al: kazanılan XP/altın iade edilir, tavan geri açılır.
+          totalXp = Math.max(0, totalXp - xp);
+          totalGold = Math.max(0, totalGold - gold);
+          dayDelta = { completions: -1, goldEarned: -gold, xpEarned: -xp };
+        } else {
+          // ANTI-FARM (Katman 1): günlük tavan doluysa ödül verilmez,
+          // tamamlama yine de sayılır (seri + görev ilerlemesi korunur).
+          const xpGain = Math.min(xp, Math.max(0, DAILY_XP_CAP - dayBase.xpEarned));
+          const goldGain = Math.min(gold, Math.max(0, DAILY_GOLD_CAP - dayBase.goldEarned));
+          totalXp += xpGain;
+          totalGold += goldGain;
+          dayDelta = { completions: 1, goldEarned: goldGain, xpEarned: xpGain };
+        }
         return {
           ...h,
           completedDates: done
@@ -553,44 +615,90 @@ export function DataProvider({ children }) {
   const pushRef = useRef(false);
   const syncTimerRef = useRef(null);
 
-  const publishProfile = useCallback(async (token, snap) => {
-    const r = await updateProfile(token, {
-      name: authRef.current?.name || snap.settings.name || 'Kullanıcı',
-      xp: snap.stats.totalXp,
-      streak: bestStreak(snap.habits),
-      gold: snap.stats.gold,
-      emoji: snap.settings.avatar || '😀',
-      avatarId: snap.settings.avatarId || null,
-      frameId: snap.settings.frameId || null,
+  // Profili sunucuya delta olarak yayınlar (Katman 3). Sunucu, kabul
+  // edilen miktarı günlük tavanla kıstırıp kendi toplamlarına ekler;
+  // köprü (syncAnchor) her sync sonrası SUNUCU değerleriyle güncellenir.
+  const publishProfile = useCallback(async (name, snap) => {
+    const anchor = syncAnchorRef.current;
+    if (!anchor.initialized) {
+      // İlk senkron: sunucudaki mevcut toplamları köprü olarak al (eski
+      // veri kaybolmasın; yalnızca aradaki FARK tavan kontrolüne girer).
+      const sp = await getServerProfile(name);
+      anchor.lastSyncedXp = sp?.xp ?? 0;
+      anchor.lastSyncedGold = sp?.coins ?? 0;
+      anchor.initialized = true;
+    }
+    // Taze cihaz koruması: yerel toplamlar 0'ken (yeni kurulum / geri
+    // yükleme sonrası) negatif delta GÖNDERME — sunucudaki mevcut XP ve
+    // altın silinmesin. Aksi halde temiz kurulum aynı kullanıcı adıyla
+    // girince tüm birikim sıfırlanırdı (admin ödülleri dahil).
+    const freshDevice = snap.stats.totalXp === 0 && anchor.lastSyncedXp > 0;
+    const freshDeviceGold = snap.stats.gold === 0 && anchor.lastSyncedGold > 0;
+    const r = await updateProfileData(name, {
+      deltaXp: freshDevice ? 0 : snap.stats.totalXp - anchor.lastSyncedXp,
+      deltaGold: freshDeviceGold ? 0 : snap.stats.gold - anchor.lastSyncedGold,
+      totalXp: snap.stats.totalXp, // geçiş dönemi fallback'i için
+      totalGold: snap.stats.gold, // geçiş dönemi fallback'i için
+      claimedDay: offsetToday(),
     });
-    return r.ok;
+    if (!r.ok) return { ok: false, warn: r.warn, error: r.error };
+    const d = r.data || {};
+    anchor.lastSyncedXp = typeof d.serverXp === 'number' ? d.serverXp : anchor.lastSyncedXp;
+    anchor.lastSyncedGold = typeof d.serverGold === 'number' ? d.serverGold : anchor.lastSyncedGold;
+    AsyncStorage.setItem(
+      SYNC_ANCHOR_KEY,
+      JSON.stringify({ lastSyncedXp: anchor.lastSyncedXp, lastSyncedGold: anchor.lastSyncedGold })
+    ).catch(() => {});
+    return { ok: true, warn: r.warn };
+  }, []);
+
+  // Sunucudaki kendi profili oku: ban durumunu uygula + admin hediyelerini
+  // yerel envantere (ownedThemes/ownedAvatars/ownedFrames) birleştir.
+  const refreshServerMeta = useCallback(async (name) => {
+    const sp = await getServerProfile(name);
+    if (!sp) return false;
+    const grants = sp.grantedItems || [];
+    if (grants.length > 0) {
+      setData((d) => {
+        const ownedAvatars = [...d.ownedAvatars];
+        const ownedThemes = [...d.ownedThemes];
+        const ownedFrames = [...d.ownedFrames];
+        let changed = false;
+        for (const g of grants) {
+          if (g?.type === 'avatar' && g?.id && !ownedAvatars.includes(g.id)) {
+            ownedAvatars.push(g.id);
+            changed = true;
+          } else if (g?.type === 'theme' && g?.id && !ownedThemes.includes(g.id)) {
+            ownedThemes.push(g.id);
+            changed = true;
+          } else if (g?.type === 'frame' && g?.id && !ownedFrames.includes(g.id)) {
+            ownedFrames.push(g.id);
+            changed = true;
+          }
+        }
+        return changed ? { ...d, ownedAvatars, ownedThemes, ownedFrames } : d;
+      });
+    }
+    setServer((s) => ({
+      ...s,
+      banned: !!sp.banned,
+      banReason: sp.banReason || null,
+    }));
+    return true;
   }, []);
 
   const pullServer = useCallback(async () => {
-    const token = await getToken();
-    const r = await getLeaderboard();
-    if (!r.ok) return false;
-    const board = (r.data?.players || []).map(profileToPlayer);
-    let friends = [];
-    let requests = [];
-    let gotMeta = true;
-    if (token) {
-      const [fr, rq] = await Promise.all([getFriends(token), getFriendRequests(token)]);
-      gotMeta = fr.ok && rq.ok;
-      friends = fr.ok ? (fr.data?.friends || []) : friends;
-      requests = rq.ok
-        ? (rq.data?.requests || []).map((x) => ({
-            requestId: x.id,
-            createdAt: x.createdAt,
-            name: x.from?.name || 'Bilinmeyen',
-            emoji: x.from?.emoji || '👤',
-            streak: x.from?.streak || 0,
-            totalXp: x.from?.xp || 0,
-            avatarId: x.from?.avatarId || null,
-            frameId: x.from?.frameId || null,
-          }))
-        : requests;
-    }
+    const name = authRef.current?.name || dataRef.current?.settings.name || 'Kullanıcı';
+    const [lb, fr, rq] = await Promise.all([
+      getLeaderboardData(name),
+      getFriends(name),
+      getFriendRequests(name),
+    ]);
+    if (!lb.ok) return false;
+    const board = (lb.leaderboard || []).map(profileToPlayer);
+    let friends = fr.ok ? (fr.friends || []).map(profileToPlayer) : [];
+    let requests = rq.ok ? (rq.requests || []) : [];
+    const gotMeta = fr.ok && rq.ok;
     // Yeni gelen istekler için tek seferlik bildirim (toast).
     if (requests.length > 0) {
       for (const req of requests) {
@@ -611,7 +719,7 @@ export function DataProvider({ children }) {
       // Boş liste geldiğinde eskileri unut ki tekrar gelince tekrar bildirilsin.
       seenRequestIdsRef.current.clear();
     }
-    const friendsMapped = friends.map(profileToPlayer);
+    const friendsMapped = friends;
     const savedAt = Date.now();
     const patch = {
       leaderboard: board,
@@ -632,16 +740,32 @@ export function DataProvider({ children }) {
     pushRef.current = true;
     try {
       const snap = dataRef.current;
-      let token = await getToken();
-      if (!token) {
-        const reg = await ensureProfile(authRef.current?.name || snap.settings.name || 'Kullanıcı');
-        if (!reg.ok) {
+      const name = authRef.current?.name || snap.settings.name || 'Kullanıcı';
+      const published = await publishProfile(name, snap);
+      if (!published.ok) {
+        // Yasak yanıtı: ban durumunu hemen uygula (uygulama yasak ekranı gösterir).
+        if (published.error === 'banned') {
+          await refreshServerMeta(name);
+          setServer((s) => ({ ...s, connected: true }));
+        } else {
           setServer((s) => ({ ...s, connected: false }));
-          return;
         }
-        token = reg.token;
+        return;
       }
-      await publishProfile(token, snap);
+      // Sunucu saat uyarısı: cihaz tarihi ileri alınmış görünüyorsa
+      // bilgilendir (ödüller sunucu tarafında zaten kıstırıldı).
+      if (published.warn === 'clock_ahead') {
+        setToasts((prev) => [
+          ...prev,
+          {
+            key: `clock_${Date.now()}`,
+            icon: '🕐',
+            title: 'Cihaz tarihi ileri alınmış görünüyor — cihaz saatini düzelt',
+            color: COLORS.danger,
+          },
+        ]);
+      }
+      await refreshServerMeta(name);
       await pullServer();
       setServer((s) => ({ ...s, connected: true }));
     } catch (e) {
@@ -649,19 +773,18 @@ export function DataProvider({ children }) {
     } finally {
       pushRef.current = false;
     }
-  }, [publishProfile, pullServer]);
+  }, [publishProfile, pullServer, refreshServerMeta]);
 
-  // Arkadaşlığı kaldırır (sunucuda iki yönlü, isimle).
+  // Arkadaşlığı kaldırır (Supabase'de iki yönlü, kullanıcı adıyla).
   const removeFriend = useCallback(
     async (name) => {
-      const token = await getToken();
-      if (!token) return { ok: false, error: 'Senkronize değil' };
-      const r = await apiRemoveFriend(token, name);
+      const me = authRef.current?.name || dataRef.current?.settings.name || 'Kullanıcı';
+      const r = await supabaseRemoveFriend(me, name);
       if (r.ok) {
         await pullServer();
         return { ok: true };
       }
-      return { ok: false, error: r.data?.error || 'Kaldırılamadı' };
+      return { ok: false, error: r.error || 'Kaldırılamadı' };
     },
     [pullServer]
   );
@@ -694,15 +817,14 @@ export function DataProvider({ children }) {
     return () => clearInterval(iv);
   }, [runSync]);
 
-  // Bekleyen isteği onaylar → arkadaş olunur.
+  // Bekleyen isteği onaylar → arkadaş olunur (Supabase).
   const acceptRequest = useCallback(
     async (requestId) => {
-      const token = await getToken();
-      if (!token) return { ok: false, error: 'Senkronize değil' };
-      const r = await acceptFriendRequest(token, requestId);
+      const me = authRef.current?.name || dataRef.current?.settings.name || 'Kullanıcı';
+      const r = await acceptFriendRequest(me, requestId);
       if (r.ok) {
         await pullServer();
-        const friendName = r.data?.friend?.name;
+        const friendName = r.friendUsername;
         if (friendName) {
           setToasts((prev) => [
             ...prev,
@@ -714,36 +836,34 @@ export function DataProvider({ children }) {
             },
           ]);
         }
-        return { ok: true, friend: r.data?.friend };
+        return { ok: true, friend: friendName ? { name: friendName } : undefined };
       }
-      return { ok: false, error: r.data?.error || 'Onaylanamadı' };
+      return { ok: false, error: r.error || 'Onaylanamadı' };
     },
     [pullServer]
   );
 
-  // Bekleyen isteği reddeder.
+  // Bekleyen isteği reddeder (Supabase).
   const declineRequest = useCallback(
     async (requestId) => {
-      const token = await getToken();
-      if (!token) return { ok: false, error: 'Senkronize değil' };
-      const r = await declineFriendRequest(token, requestId);
+      const me = authRef.current?.name || dataRef.current?.settings.name || 'Kullanıcı';
+      const r = await declineFriendRequest(me, requestId);
       if (r.ok) {
         await pullServer();
         return { ok: true };
       }
-      return { ok: false, error: r.data?.error || 'Reddedilemedi' };
+      return { ok: false, error: r.error || 'Reddedilemedi' };
     },
     [pullServer]
   );
 
-  // İsme arkadaşlık isteği gönderir.
-  // Sonuç: pending (gönderildi) | already_friends | already_pending | no_token
+  // Kullanıcı adına arkadaşlık isteği gönderir (Supabase).
+  // Sonuç: pending (gönderildi) | already_friends | already_pending | not_found
   const requestFriend = useCallback(async (name) => {
-    const token = await getToken();
-    if (!token) return { ok: false, state: 'no_token' };
-    const r = await sendFriendRequest(token, name);
-    if (r.ok) return { ok: true, state: r.data?.state || 'pending' };
-    return { ok: false, state: 'error', error: r.data?.error || 'İstek gönderilemedi' };
+    const me = authRef.current?.name || dataRef.current?.settings.name || 'Kullanıcı';
+    const r = await sendFriendRequest(me, name);
+    if (r.ok) return { ok: true, state: r.state || 'pending' };
+    return { ok: false, state: r.state || 'error', error: r.error || 'İstek gönderilemedi' };
   }, []);
 
   // Sunucudan veriyi elle tazeler (profil yayınlar + her şeyi çeker).
@@ -840,16 +960,24 @@ export function DataProvider({ children }) {
       }
       const xp = d.settings.pomodoroXp || 50;
       const gold = GOLD_RATES.pomodoro;
+      const today = offsetToday();
+      // ANTI-FARM (Katman 1): günlük XP/altın tavanı pomodoro için de geçerli.
+      const dayBase =
+        d.stats.day && d.stats.day.key === today
+          ? d.stats.day
+          : { key: today, completions: 0, pomodoro: 0, goldEarned: 0, xpEarned: 0 };
+      const xpGain = Math.min(xp, Math.max(0, DAILY_XP_CAP - dayBase.xpEarned));
+      const goldGain = Math.min(gold, Math.max(0, DAILY_GOLD_CAP - dayBase.goldEarned));
       // Görev sayaçları: odak +1, altın +15 (gün değiştiyse sıfırlanır).
       const stats = bumpDay(
         {
           ...d.stats,
-          totalXp: d.stats.totalXp + xp,
+          totalXp: d.stats.totalXp + xpGain,
           pomodoroCount: (d.stats.pomodoroCount || 0) + 1,
-          gold: (d.stats.gold || 0) + gold,
+          gold: (d.stats.gold || 0) + goldGain,
         },
-        offsetToday(),
-        { pomodoro: 1, goldEarned: gold }
+        today,
+        { pomodoro: 1, goldEarned: goldGain, xpEarned: xpGain }
       );
       return {
         ...d,
@@ -961,7 +1089,7 @@ export function DataProvider({ children }) {
   const claimQuest = useCallback(
     (questId) => {
       const quest = getQuest(questId);
-      if (!quest || !canClaimQuest(quest, data.stats.day, data.questClaims || {}, Date.now())) {
+      if (!quest || !canClaimQuest(quest, data.stats.day, data.questClaims || {}, serverNow())) {
         return;
       }
       const diff = QUEST_DIFFICULTIES[quest.difficulty];
@@ -969,20 +1097,29 @@ export function DataProvider({ children }) {
       setData((d) => {
         const q = getQuest(questId);
         const claims = d.questClaims || {};
-        if (!q || !canClaimQuest(q, d.stats.day, claims, Date.now())) return d;
+        if (!q || !canClaimQuest(q, d.stats.day, claims, serverNow())) return d;
+        const today = offsetToday();
+        // ANTI-FARM (Katman 1): görev ödülleri de günlük tavanlara tabidir.
+        const dayBase =
+          d.stats.day && d.stats.day.key === today
+            ? d.stats.day
+            : { key: today, completions: 0, pomodoro: 0, goldEarned: 0, xpEarned: 0 };
+        const cappedXp = Math.min(xpGain, Math.max(0, DAILY_XP_CAP - dayBase.xpEarned));
+        const cappedGold = Math.min(diff.gold, Math.max(0, DAILY_GOLD_CAP - dayBase.goldEarned));
         const metricValue = q.type === 'auto' ? (d.stats.day?.[q.metric] ?? 0) : 0;
         return {
           ...d,
-          questClaims: { ...claims, [questId]: { ts: Date.now(), value: metricValue } },
+          // Bekleme zaman damgası sunucu saatine göre yazılır (saat oynatma koruması).
+          questClaims: { ...claims, [questId]: { ts: serverNow(), value: metricValue } },
           // XP seviye atlama efektini tetikler; altın günlük sayaca işlenir.
           stats: bumpDay(
             {
               ...d.stats,
-              totalXp: d.stats.totalXp + xpGain,
-              gold: (d.stats.gold || 0) + diff.gold,
+              totalXp: d.stats.totalXp + cappedXp,
+              gold: (d.stats.gold || 0) + cappedGold,
             },
-            offsetToday(),
-            { goldEarned: diff.gold }
+            today,
+            { goldEarned: cappedGold, xpEarned: cappedXp }
           ),
         };
       });

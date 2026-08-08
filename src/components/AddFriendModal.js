@@ -12,17 +12,17 @@ import {
 } from 'react-native';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
-import { searchProfiles } from '../services/api';
+import { searchProfiles, sendFriendRequest } from '../services/friendService';
 import { useTheme } from '../theme';
 import AvatarCircle from './AvatarCircle';
 import Sheet from './Sheet';
 
-// Arkadaş ekleme akışı: sunucuda isim arar, bulunan profillere
-// arkadaşlık isteği gönderir (onay → karşılıklı arkadaşlık).
+// Arkadaş ekleme akışı: Supabase'de kullanıcı adı arar, bulunan
+// profillere arkadaşlık isteği gönderir (onay → karşılıklı arkadaşlık).
 export default function AddFriendModal({ visible, onClose }) {
   const { colors: C } = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
-  const { data, requestFriend, refreshServer } = useData();
+  const { data, refreshServer } = useData();
   const { user: authUser } = useAuth();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -51,31 +51,31 @@ export default function AddFriendModal({ visible, onClose }) {
     setSearching(true);
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(async () => {
-      const r = await searchProfiles(q);
+      const r = await searchProfiles(q, meName);
       setSearching(false);
       setSearched(true);
-      setResults(r.ok ? r.data?.results || [] : []);
-      if (!r.ok) setFeedback({ name: null, text: 'Arama yapılamadı (çevrimdışı mısın?)', ok: false });
+      setResults(r.ok ? r.results || [] : []);
+      if (!r.ok) setFeedback({ name: null, text: r.error || 'Arama yapılamadı', ok: false });
     }, 300);
     return () => clearTimeout(timerRef.current);
   }, [query, visible]);
 
-  const send = async (name) => {
-    setBusy(name);
+  const send = async (username) => {
+    setBusy(username);
     setFeedback(null);
-    const res = await requestFriend(name);
+    const res = await sendFriendRequest(meName, username);
     setBusy(null);
     if (!res.ok) {
-      setFeedback({ name, text: res.error || 'İstek gönderilemedi', ok: false });
+      setFeedback({ name: username, text: res.error || 'İstek gönderilemedi', ok: false });
       return;
     }
     if (res.state === 'already_friends') {
-      setFeedback({ name, text: 'Zaten arkadaşsınız ✓', ok: true });
+      setFeedback({ name: username, text: 'Zaten arkadaşsınız ✓', ok: true });
       await refreshServer();
     } else if (res.state === 'already_pending') {
-      setFeedback({ name, text: 'İstek zaten beklemede ⏳', ok: true });
+      setFeedback({ name: username, text: 'İstek zaten beklemede ⏳', ok: true });
     } else {
-      setFeedback({ name, text: 'İstek gönderildi ✓', ok: true });
+      setFeedback({ name: username, text: 'İstek gönderildi ✓', ok: true });
     }
   };
 
@@ -86,7 +86,7 @@ export default function AddFriendModal({ visible, onClose }) {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <TextInput
           style={styles.input}
-          placeholder="İsim ara (örn. Zeynep)"
+          placeholder="Kullanıcı adı ara (örn. zeynep)"
           placeholderTextColor={C.textMuted}
           value={query}
           onChangeText={setQuery}
@@ -94,7 +94,7 @@ export default function AddFriendModal({ visible, onClose }) {
           autoCapitalize="none"
         />
         <Text style={styles.hint}>
-          Arkadaşın uygulamaya sunucuda kayıtlı olmalı; ismiyle aranır. Onay aldıktan sonra
+          Arkadaşın uygulamaya kayıtlı olmalı; kullanıcı adıyla aranır. Onay aldıktan sonra
           ikiniz de arkadaş listesinde görünürsünüz.
         </Text>
 
@@ -107,20 +107,15 @@ export default function AddFriendModal({ visible, onClose }) {
           )}
           {!searching &&
             results
-              .filter((r) => r.name !== meName)
+              .filter((r) => r.username !== meName)
               .map((r) => {
-                const friend = isFriend(r.name);
+                const friend = isFriend(r.username);
                 return (
-                  <View key={r.token} style={styles.row}>
-                    <AvatarCircle
-                      avatarId={r.avatarId}
-                      emoji={r.avatarId ? undefined : r.emoji}
-                      frameId={r.frameId}
-                      size={40}
-                    />
+                  <View key={r.id} style={styles.row}>
+                    <AvatarCircle size={40} />
                     <View style={styles.rowInfo}>
                       <Text style={styles.rowName} numberOfLines={1}>
-                        {r.name}
+                        {r.username}
                       </Text>
                       <Text style={styles.rowMeta}>⚡ {r.xp} XP</Text>
                     </View>
@@ -130,11 +125,14 @@ export default function AddFriendModal({ visible, onClose }) {
                       </View>
                     ) : (
                       <Pressable
-                        style={[styles.sendButton, busy === r.name && styles.sendButtonDisabled]}
-                        onPress={() => send(r.name)}
-                        disabled={busy === r.name}
+                        style={[
+                          styles.sendButton,
+                          busy === r.username && styles.sendButtonDisabled,
+                        ]}
+                        onPress={() => send(r.username)}
+                        disabled={busy === r.username}
                       >
-                        {busy === r.name ? (
+                        {busy === r.username ? (
                           <ActivityIndicator size="small" color="#FFFFFF" />
                         ) : (
                           <Text style={styles.sendButtonText}>İstek Gönder</Text>

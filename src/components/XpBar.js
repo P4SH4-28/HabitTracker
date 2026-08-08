@@ -2,10 +2,13 @@ import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../theme';
 
-export default function XpBar({ level, curXp, nextThreshold }) {
+// Günlük XP göstergesi (anti-farm şeffaflığı): bugün kazanılan XP,
+// günlük tavanla birlikte gösterilir. Tavan dolduysa sarı uyarı rengi.
+export default function XpBar({ level, curXp, nextThreshold, todayXp = null, todayCap = null }) {
   const { colors: C } = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
   const percent = Math.min(100, (curXp / nextThreshold) * 100);
+  const capReached = todayCap != null && todayXp != null && todayXp >= todayCap;
   return (
     <View style={styles.row}>
       <View style={styles.badge}>
@@ -22,7 +25,15 @@ export default function XpBar({ level, curXp, nextThreshold }) {
         <View style={styles.track}>
           <View style={[styles.fill, { width: `${percent}%` }]} />
         </View>
-        <Text style={styles.hint}>Sonraki seviyeye {nextThreshold - curXp} XP kaldı</Text>
+        {todayCap != null && todayXp != null ? (
+          <Text style={[styles.hint, capReached && styles.hintCap]}>
+            {capReached
+              ? `Bugünün XP sınırı doldu (${todayXp}/${todayCap})`
+              : `Bugünkü XP: ${todayXp}/${todayCap} • Sonraki seviyeye ${nextThreshold - curXp} XP kaldı`}
+          </Text>
+        ) : (
+          <Text style={styles.hint}>Sonraki seviyeye {nextThreshold - curXp} XP kaldı</Text>
+        )}
       </View>
     </View>
   );
@@ -92,6 +103,10 @@ function makeStyles(C) {
   hint: {
     color: C.textMuted,
     fontSize: 11,
+  },
+  hintCap: {
+    color: C.danger,
+    fontWeight: '700',
   },
 });
 }

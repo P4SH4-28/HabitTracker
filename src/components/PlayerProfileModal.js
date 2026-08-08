@@ -8,8 +8,10 @@
 // ============================================================
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { getAvatarEmoji, getFrame } from '../data/shop';
+import { sendFriendRequest } from '../services/friendService';
 import { useTheme } from '../theme';
 import { FrameDecor } from './AvatarCircle';
 import {
@@ -28,13 +30,17 @@ import WeeklyCompare from './WeeklyCompare';
 import XpBar from './XpBar';
 
 export default function PlayerProfileModal({ player, onClose }) {
-  const { data, today, requestFriend, refreshServer } = useData();
+  const { data, today, refreshServer } = useData();
+  const { user: authUser } = useAuth();
   const { colors: C } = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState(null);
   const activities = useMemo(() => player?.activities || [], [player]);
-  const isFriend = data.friends.some((f) => f.id === player?.id);
+  // Canlı satırlarda id UUID olabilir; isimle de eşleşme denenir.
+  const isFriend = data.friends.some(
+    (f) => f.id === player?.id || f.name === player?.name
+  );
 
   // Profil istatistikleri: tıpkı Gelişim ekranındaki mantıkla hesaplanır.
   const stats = useMemo(() => {
@@ -53,7 +59,7 @@ export default function PlayerProfileModal({ player, onClose }) {
     if (!player || sending) return;
     setSending(true);
     setSendResult(null);
-    const res = await requestFriend(player.name);
+    const res = await sendFriendRequest(authUser?.name, player.name);
     setSending(false);
     if (!res.ok) {
       setSendResult({ ok: false, text: res.error || 'İstek gönderilemedi' });

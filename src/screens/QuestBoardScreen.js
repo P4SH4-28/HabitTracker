@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useData } from '../context/DataContext';
 import { dateKey } from '../logic';
+import { serverNow } from '../services/serverClock';
 import {
   canClaimQuest,
   cooldownLeft,
@@ -39,9 +40,10 @@ export default function QuestBoardScreen() {
   const styles = useMemo(() => makeStyles(C), [C]);
 
   // Geri sayımların saniyede bir tazelenmesi için ortak "şimdi" zamanı.
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => serverNow());
+  // Sunucu saatine bağlı sayım (saat oynatma koruması).
   useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 1000);
+    const interval = setInterval(() => setNow(serverNow()), 1000);
     return () => clearInterval(interval);
   }, []);
 

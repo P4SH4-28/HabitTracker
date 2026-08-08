@@ -10,6 +10,17 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import { hashPassword } from '../logic';
 
 const AUTH_KEY = '@habit_tracker_auth';
+// "Beni hatırla" oturumu: son giriş yapılan hesap (admin dahil) burada
+// saklanır; uygulama açılışında doğrudan oturum açılmış gibi başlar.
+const SESSION_KEY = '@habit_tracker_session';
+
+// Oturumu kaydeder (asla çökmez; hata yutulur).
+function saveSession(user) {
+  if (!user) return;
+  AsyncStorage.setItem(SESSION_KEY, JSON.stringify(user)).catch((e) =>
+    console.warn('Oturum kaydedilemedi:', e)
+  );
+}
 
 // Yönetici hesabı: isim + şifre sabittir, kayıtlı kullanıcıdan bağımsızdır.
 // Bu hesapla giriş yapıldığında kullanıcıya "isAdmin: true" bayrağı verilir;
@@ -24,9 +35,23 @@ export function AuthProvider({ children }) {
   const [status, setStatus] = useState('signup');
   const [user, setUser] = useState(null);
 
-  // Açılışta kayıtlı hesabı oku: varsa giriş ekranı, yoksa kayıt ekranı.
+  // Açılışta kayıtlı oturumu oku: "beni hatırla" varsa doğrudan içeri
+  // girilir; yoksa kayıtlı hesap giriş ekranını, hesap yoksa kayıt ekranını açar.
   useEffect(() => {
     (async () => {
+      try {
+        const session = await AsyncStorage.getItem(SESSION_KEY);
+        if (session) {
+          const parsed = JSON.parse(session);
+          if (parsed && typeof parsed.name === 'string' && parsed.name) {
+            setUser(parsed);
+            setStatus('in');
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('Oturum okunamadı:', e);
+      }
       try {
         const raw = await AsyncStorage.getItem(AUTH_KEY);
         if (raw) {
@@ -55,6 +80,7 @@ export function AuthProvider({ children }) {
       if (existing) return { ok: false, error: 'Bu cihazda zaten bir hesap var' };
       const newUser = { name: n, passHash: hashPassword(password) };
       await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(newUser));
+      saveSession(newUser);
       setUser(newUser);
       setStatus('in');
       return { ok: true };
@@ -69,6 +95,7 @@ export function AuthProvider({ children }) {
     const n = (name || '').trim();
     const hash = hashPassword(password || '');
     if (n === ADMIN_NAME && hash === ADMIN_PASS_HASH) {
+      saveSession({ name: n, passHash: hash, isAdmin: true });
       setUser({ name: n, passHash: hash, isAdmin: true });
       setStatus('in');
       return { ok: true, admin: true };
@@ -79,6 +106,7 @@ export function AuthProvider({ children }) {
       const parsed = JSON.parse(raw);
       const ok = parsed.name === n && parsed.passHash === hash;
       if (!ok) return { ok: false, error: 'İsim veya şifre hatalı' };
+      saveSession(parsed);
       setUser(parsed);
       setStatus('in');
       return { ok: true };
@@ -91,6 +119,11 @@ export function AuthProvider({ children }) {
   const logout = useCallback(async () => {
     setUser(null);
     setStatus('login');
+    try {
+      await AsyncStorage.removeItem(SESSION_KEY);
+    } catch (e) {
+      console.warn('Oturum silinemedi:', e);
+    }
   }, []);
 
   // Kullanıcı adını değiştirir.
@@ -105,6 +138,7 @@ export function AuthProvider({ children }) {
       AsyncStorage.setItem(AUTH_KEY, JSON.stringify(next)).catch((e) =>
         console.warn('İsim kaydedilemedi:', e)
       );
+      saveSession(next);
       return next;
     });
     return { ok: true };
@@ -124,6 +158,7 @@ export function AuthProvider({ children }) {
       AsyncStorage.setItem(AUTH_KEY, JSON.stringify(next)).catch((e) =>
         console.warn('Şifre kaydedilemedi:', e)
       );
+      saveSession(next);
       return next;
     });
     return { ok: true };
@@ -134,6 +169,7 @@ export function AuthProvider({ children }) {
   const deleteAccount = useCallback(async () => {
     try {
       await AsyncStorage.removeItem(AUTH_KEY);
+      await AsyncStorage.removeItem(SESSION_KEY);
     } catch (e) {
       console.warn('Hesap silinemedi:', e);
     }

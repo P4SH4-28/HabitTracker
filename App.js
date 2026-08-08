@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useMemo } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { DataProvider, useData } from './src/context/DataContext';
@@ -15,6 +15,7 @@ import AchievementToast from './src/components/AchievementToast';
 import BackgroundPattern from './src/components/BackgroundPattern';
 import LevelUpModal from './src/components/LevelUpModal';
 import AuthScreen from './src/screens/AuthScreen';
+import AdminScreen from './src/screens/AdminScreen';
 import FriendsScreen from './src/screens/FriendsScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import LeaderboardScreen from './src/screens/LeaderboardScreen';
@@ -34,10 +35,12 @@ const TAB_ICONS = {
   Leaderboard: 'trophy',
   Friends: 'people',
   Settings: 'settings',
+  Admin: 'shield-checkmark',
 };
 
 function TabNavigator() {
   const { data, leaderboardMinLevel } = useData();
+  const { user: authUser } = useAuth();
   const { colors } = useTheme();
   const leaderboardLocked = levelFromTotalXp(data.stats.totalXp).level < leaderboardMinLevel;
 
@@ -116,12 +119,19 @@ function TabNavigator() {
         component={SettingsScreen}
         options={{ tabBarLabel: 'Ayarlar' }}
       />
+      {authUser?.isAdmin ? (
+        <Tab.Screen
+          name="Admin"
+          component={AdminScreen}
+          options={{ tabBarLabel: 'Yönetici' }}
+        />
+      ) : null}
     </Tab.Navigator>
   );
 }
 
 function Root() {
-  const { data, loading } = useData();
+  const { data, loading, server } = useData();
   const { status: authStatus } = useAuth();
   // Aktif temanın renkleri: tema değişince tüm ağaç yeniden çizilir.
   const colors = useMemo(() => resolveTheme(data.settings.themeId), [data.settings.themeId]);
@@ -153,6 +163,25 @@ function Root() {
     return (
       <ThemeProvider value={{ colors }}>
         <AuthScreen />
+      </ThemeProvider>
+    );
+  }
+
+  // Hesap yasaklandıysa uygulama yalnızca yasak ekranını gösterir
+  // (sunucu zaten kazanç senkronunu durdurdu — bu ekran bilgilendirme).
+  if (server.banned) {
+    return (
+      <ThemeProvider value={{ colors }}>
+        <View style={[styles.root, styles.banCenter, { backgroundColor: colors.background }]}>
+          <Text style={{ fontSize: 56 }}>⛔</Text>
+          <Text style={[styles.banTitle, { color: colors.text }]}>Hesabın yasaklandı</Text>
+          {server.banReason ? (
+            <Text style={[styles.banReason, { color: colors.textMuted }]}>Gerekçe: {server.banReason}</Text>
+          ) : null}
+          <Text style={[styles.banHint, { color: colors.textMuted }]}>
+            Kurallara aykırı kullanım nedeniyle yönetici tarafından durduruldun.
+          </Text>
+        </View>
       </ThemeProvider>
     );
   }
@@ -192,6 +221,28 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: '#0B0E14',
+  },
+  banCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  banTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    marginTop: 12,
+  },
+  banReason: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  banHint: {
+    fontSize: 13,
+    marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 20,
   },
   splash: {
     flex: 1,

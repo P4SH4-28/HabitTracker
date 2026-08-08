@@ -19,7 +19,8 @@ import PomodoroTimer from '../components/PomodoroTimer';
 import XpBar from '../components/XpBar';
 import { useData } from '../context/DataContext';
 import { canClaimQuest, getQuest, QUEST_CATALOG } from '../data/quests';
-import { dateKey, levelFromTotalXp } from '../logic';
+import { DAILY_XP_CAP, dateKey, levelFromTotalXp, MAX_ACTIVE_HABITS } from '../logic';
+import { serverNow } from '../services/serverClock';
 import { useTheme } from '../theme';
 
 export default function HomeScreen() {
@@ -33,13 +34,14 @@ export default function HomeScreen() {
   const [modalVisible, setModalVisible] = useState(false);
 
   // Görev özeti: bugün bitirilen görev sayısı + şu an ödülü hazır olanlar.
+  // Bekleme süreleri sunucu saatine göre hesaplanır (saat oynatma koruması).
   const questSummary = useMemo(() => {
     const claims = data.questClaims || {};
     const doneToday = Object.entries(claims).filter(
       ([id, c]) => c?.ts && dateKey(new Date(c.ts)) === today && getQuest(id)
     ).length;
     const readyCount = QUEST_CATALOG.filter((q) =>
-      canClaimQuest(q, data.stats.day, claims, Date.now())
+      canClaimQuest(q, data.stats.day, claims, serverNow())
     ).length;
     return { doneToday, readyCount };
   }, [data.questClaims, data.stats.day, today]);
@@ -84,6 +86,8 @@ export default function HomeScreen() {
           level={levelInfo.level}
           curXp={levelInfo.curXp}
           nextThreshold={levelInfo.nextThreshold}
+          todayXp={stats.day?.key === today ? stats.day.xpEarned || 0 : 0}
+          todayCap={DAILY_XP_CAP}
         />
       </View>
       <Pressable style={styles.questCard} onPress={() => navigation.navigate('Quest')}>
@@ -152,6 +156,8 @@ export default function HomeScreen() {
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
         onAdd={addHabit}
+        habitsCount={habits.length}
+        maxHabits={MAX_ACTIVE_HABITS}
       />
     </View>
   );

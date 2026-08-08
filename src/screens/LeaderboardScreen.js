@@ -8,7 +8,7 @@
 // - Bir satıra dokununca o kullanıcının profili açılır; profilinden
 //   Gelişim verilerine bakabilir ve arkadaşlık isteği gönderebilirsin.
 // ============================================================
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import PlayerProfileModal from '../components/PlayerProfileModal';
 import { FrameDecor } from '../components/AvatarCircle';
@@ -16,6 +16,7 @@ import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { getAvatarEmoji, getFrame } from '../data/shop';
 import { bestStreak, levelFromTotalXp } from '../logic';
+import { getLeaderboardData } from '../services/leaderboardService';
 import { useTheme } from '../theme';
 
 const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
@@ -23,7 +24,7 @@ const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
 const PODIUM_COLORS = { 1: '#FFD75E', 2: '#C0C8D8', 3: '#D98E5A' };
 
 export default function LeaderboardScreen() {
-  const { data, today, leaderboardMinLevel, leaderboardMinXp, server, refreshServer } = useData();
+  const { data, today, leaderboardMinLevel, leaderboardMinXp, refreshServer } = useData();
   const { user: authUser } = useAuth();
   const { colors: C } = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
@@ -33,12 +34,40 @@ export default function LeaderboardScreen() {
   const locked = myLevel < leaderboardMinLevel;
   const [selected, setSelected] = useState(null);
 
+  // Canlı Supabase liderlik verisi: { ok, leaderboard } | { ok: false, error }.
+  const [live, setLive] = useState(null);
+
+  const loadLive = useCallback(async () => {
+    setLive(await getLeaderboardData(authUser?.name));
+  }, [authUser?.name]);
+
+  // Açılışta canlı veriyi çek.
+  useEffect(() => {
+    loadLive();
+  }, [loadLive]);
+
   // Arkadaşları id'ye göre hızlıca bulmak için bir küme (set).
   const friendIds = useMemo(() => new Set(friends.map((f) => f.id)), [friends]);
 
-  // Sıralama: sen + sunucudaki herkes + (listede olmayan) arkadaşlar.
-  // Kendi sunucu profili "me" satırıyla çakışmasın diye isimle elenir.
+  // Sıralama: canlı veri varsa (sen + arkadaşların) kullanılır;
+  // yoksa önbellekteki sunucu listesi + arkadaşlar gösterilir.
   const entries = useMemo(() => {
+    if (live?.ok) {
+      return live.leaderboard.map((p) => ({
+        id: p.id,
+        name: p.username,
+        emoji: p.isCurrentUser ? getAvatarEmoji(data.settings.avatarId) : '😀',
+        frameId: p.isCurrentUser ? data.settings.frameId : null,
+        totalXp: p.xp,
+        coins: p.coins,
+        streak: 0,
+        isMe: p.isCurrentUser,
+        isFriend: !p.isCurrentUser,
+        // Katman 4: şüpheli kullanıcı bayrağı + 7 günlük XP trendi.
+        flagged: !!p.flagged,
+        xp7d: p.xp7d || 0,
+      }));
+    }
     const poolIds = new Set(players.map((p) => p.id));
     const extraFriends = friends.filter(
       (f) => !poolIds.has(f.id) && f.name !== meName
@@ -59,7 +88,7 @@ export default function LeaderboardScreen() {
         .map((p) => ({ ...p, isMe: false, isFriend: friendIds.has(p.id) })),
       ...extraFriends.map((f) => ({ ...f, isMe: false, isFriend: true })),
     ].sort((a, b) => b.totalXp - a.totalXp);
-  }, [players, friends, stats.totalXp, friendIds, data.habits, today, data.settings.avatarId, data.settings.frameId, meName, authUser?.name]);
+  }, [live, players, friends, stats.totalXp, friendIds, data.habits, today, data.settings.avatarId, data.settings.frameId, meName, authUser?.name]);
 
   // ---------- KİLİT EKRANI: seviye 5'ten önce ----------
   if (locked) {
@@ -108,12 +137,18 @@ export default function LeaderboardScreen() {
         <Text style={styles.screenTitle}>Liderlik</Text>
         <Text style={styles.screenSub}>Herkes burada — profillere dokunarak göz at</Text>
 
-        {!server.connected && (
+        {live && !live.ok && (
           <View style={styles.offlineBox}>
             <Text style={styles.offlineText}>
-              📡 Sunucuya bağlanılamadı — çevrimdışı önbellek gösteriliyor.
+              📡 Canlı liderlik verisi alınamadı — önbellek gösteriliyor.
             </Text>
-            <Pressable style={styles.retryButton} onPress={refreshServer}>
+            <Pressable
+              style={styles.retryButton}
+              onPress={() => {
+                refreshServer();
+                loadLive();
+              }}
+            >
               <Text style={styles.retryText}>Yenile</Text>
             </Pressable>
           </View>
@@ -149,6 +184,9 @@ export default function LeaderboardScreen() {
                   <Text style={[styles.podiumXp, { color: PODIUM_COLORS[rank] }]}>
                     {e.totalXp} XP
                   </Text>
+                  {e.coins != null && (
+                    <Text style={styles.podiumCoins}>🪙 {e.coins}</Text>
+                  )}
                   {e.isMe && <Text style={styles.meLabel}>SEN</Text>}
                 </Pressable>
               );
@@ -177,8 +215,15 @@ export default function LeaderboardScreen() {
                     {e.name} {e.isMe && <Text style={styles.meName}>(sen)</Text>}
                   </Text>
                   {e.isFriend && <Text style={styles.friendChip}>ARKADAŞ</Text>}
+                  {/* Katman 4: şüpheli kullanıcı bayrağı (herkese görünür) */}
+                  {e.flagged && (
+                    <Text style={styles.flagChip}>⚠️ ŞÜPHELİ</Text>
+                  )}
                 </View>
-                <Text style={styles.rowStreak}>🔥 {e.streak} günlük seri</Text>
+                <Text style={styles.rowStreak}>
+                  {e.coins != null ? `🪙 ${e.coins}` : `🔥 ${e.streak} günlük seri`}
+                  {e.xp7d > 0 ? `   •   7 gün: +${e.xp7d} XP` : ''}
+                </Text>
               </View>
               <Text style={styles.rowXp}>{e.totalXp} XP</Text>
               <Text style={styles.chevron}>›</Text>
@@ -357,6 +402,11 @@ function makeStyles(C) {
       fontSize: 12,
       fontWeight: '800',
     },
+    podiumCoins: {
+      color: C.textMuted,
+      fontSize: 10,
+      fontWeight: '700',
+    },
     meLabel: {
       color: C.primary,
       fontSize: 9,
@@ -418,6 +468,16 @@ function makeStyles(C) {
       fontSize: 9,
       fontWeight: '800',
       backgroundColor: C.accent + '22',
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 6,
+      overflow: 'hidden',
+    },
+    flagChip: {
+      color: C.danger,
+      fontSize: 9,
+      fontWeight: '800',
+      backgroundColor: C.danger + '22',
       paddingHorizontal: 6,
       paddingVertical: 2,
       borderRadius: 6,

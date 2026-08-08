@@ -33,8 +33,10 @@ export function hashPassword(password, salt = 'habit_tracker_salt') {
 // Bugünün tarih anahtarını döndürür (yerel saat dilimine göre).
 // Opsiyonel "offsetDays" parametresi TEST amacıyladır: gün ilerleme
 // simülasyonu yaparken (+1 = yarınmış gibi davran) kullanılır.
-export function todayKey(offsetDays = 0) {
-  const d = new Date();
+// Opsiyonel "now" parametresi: ekonomi kararlarında sunucu saatine
+// bağlanmak için (serverClock) geçerli zamanın yerine geçirilebilir.
+export function todayKey(offsetDays = 0, now = new Date()) {
+  const d = new Date(now);
   d.setDate(d.getDate() + offsetDays);
   return dateKey(d);
 }
@@ -195,6 +197,15 @@ export function synthesizeActivities(streak, today) {
 
 // Pomodoro zamanlayıcının varsayılan süresi: 25 dakika (milisaniye cinsinden).
 export const POMODORO_DURATION_MS = 25 * 60 * 1000;
+
+// ---------- Anti-farm ekonomi kuralları (Katman 1) ----------
+// Kullanıcılar sahte alışkanlık oluşturup günlük XP/altın farm'ı
+// yapamasın diye günlük KAZANÇ tavanları uygulanır. Tavan aşılınca
+// XP/altın verilmez ama tamamlama sayılır (seri ve görev ilerlemesi
+// korunur; yalnızca ödül kesilir). Sayılar ayarlarda değiştirilebilir.
+export const DAILY_XP_CAP = 500;
+export const DAILY_GOLD_CAP = 150;
+export const MAX_ACTIVE_HABITS = 10;
 
 // Milisaniyeyi "dk:ss" biçiminde gösterir (örn. 1_499_000 → "24:59").
 export function formatDuration(ms) {

@@ -13,14 +13,17 @@ import ColorPicker from './ColorPicker';
 import EmojiPicker from './EmojiPicker';
 import Sheet from './Sheet';
 
-export default function AddHabitModal({ visible, onClose, onAdd }) {
+export default function AddHabitModal({ visible, onClose, onAdd, habitsCount = 0, maxHabits = 10 }) {
   const { colors: C } = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState('💧');
   const [color, setColor] = useState(C.primary);
+  // Anti-farm (Katman 1): sınırsız alışkanlık farm'ına karşı limit.
+  const limitReached = habitsCount >= maxHabits;
 
   const submit = () => {
+    if (limitReached) return;
     const trimmed = name.trim();
     if (!trimmed) return;
     onAdd(trimmed, emoji, color);
@@ -58,12 +61,26 @@ export default function AddHabitModal({ visible, onClose, onAdd }) {
         />
         <EmojiPicker value={emoji} onChange={setEmoji} />
         <ColorPicker value={color} onChange={setColor} />
+        {limitReached && (
+          <View style={styles.limitBox}>
+            <Text style={styles.limitText}>
+              ⛔ En fazla {maxHabits} alışkanlık oluşturabilirsin. Yeni eklemek için mevcut
+              birini sil.
+            </Text>
+          </View>
+        )}
         <Pressable
-          style={[styles.button, { backgroundColor: color }, !name.trim() && styles.buttonDisabled]}
+          style={[
+            styles.button,
+            { backgroundColor: color },
+            (!name.trim() || limitReached) && styles.buttonDisabled,
+          ]}
           onPress={submit}
-          disabled={!name.trim()}
+          disabled={!name.trim() || limitReached}
         >
-          <Text style={styles.buttonText}>Alışkanlığı Ekle</Text>
+          <Text style={styles.buttonText}>
+            {limitReached ? `Limit doldu (${habitsCount}/${maxHabits})` : 'Alışkanlığı Ekle'}
+          </Text>
         </Pressable>
       </KeyboardAvoidingView>
     </Sheet>
@@ -131,6 +148,19 @@ function makeStyles(C) {
     buttonDisabled: {
       opacity: 0.4,
       shadowOpacity: 0,
+    },
+    limitBox: {
+      backgroundColor: C.danger + '1A',
+      borderWidth: 1,
+      borderColor: C.danger + '55',
+      borderRadius: 12,
+      padding: 12,
+    },
+    limitText: {
+      color: C.danger,
+      fontSize: 12,
+      lineHeight: 17,
+      fontWeight: '600',
     },
     buttonText: {
       color: '#FFFFFF',

@@ -5,6 +5,8 @@
 // ============================================================
 import { useMemo, useState } from 'react';
 import {
+  Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -13,13 +15,24 @@ import {
   Pressable,
   View,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import AvatarCircle from '../components/AvatarCircle';
 import { confirmDialog } from '../components/HabitCard';
 import Sheet from '../components/Sheet';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { getShopItem } from '../data/shop';
+import { checkServerConnection } from '../services/syncService';
 import { getTheme, useTheme } from '../theme';
+
+// Kullanıcıya bilgilendirme gösterir (mobilde Alert, web'de tarayıcı kutusu).
+function notify(title, message) {
+  if (Platform.OS === 'web') {
+    window.alert(`${title}\n\n${message}`);
+  } else {
+    Alert.alert(title, message);
+  }
+}
 
 function Section({ title, children }) {
   const { colors: C } = useTheme();
@@ -107,11 +120,11 @@ export default function SettingsScreen() {
     backupTs,
     resetAll,
     server,
-    refreshServer,
   } = useData();
   const { user: authUser, logout, changeName, changePassword, deleteAccount } = useAuth();
   const { colors: C } = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
+  const navigation = useNavigation();
 
   const penaltyEnabled = data.settings.penaltyEnabled !== false;
   const reminderHour = data.settings.reminderHour;
@@ -120,6 +133,21 @@ export default function SettingsScreen() {
 
   const [editSheet, setEditSheet] = useState(null); // 'name' | 'password'
   const [busy, setBusy] = useState('');
+  // Son el senkron sonucu: 'online' | 'offline' | null (henüz kontrol edilmedi).
+  const [syncStatus, setSyncStatus] = useState(null);
+
+  const handleSync = async () => {
+    setBusy('server');
+    const ok = await checkServerConnection();
+    setBusy('');
+    setSyncStatus(ok ? 'online' : 'offline');
+    notify(
+      ok ? 'Bağlantı Başarılı' : 'Bağlantı Hatası',
+      ok
+        ? 'Supabase bulut veritabanına erişildi. Uygulama artık çevrimiçi.'
+        : 'İnternet bağlantını veya bulut veritabanı erişimini kontrol et.'
+    );
+  };
 
   const handleBackup = async () => {
     setBusy('backup');
@@ -138,6 +166,10 @@ export default function SettingsScreen() {
         if (!result.ok) confirmDialog('Hata', result.error || 'Geri yüklenemedi', () => {});
       }
     );
+  };
+
+  const openAdminPanel = () => {
+    navigation.navigate('Admin');
   };
 
   return (
@@ -270,27 +302,34 @@ export default function SettingsScreen() {
         <SettingRow
           label="Bağlantı durumu"
           description={
-            server.connected
-              ? server.lastSync
-                ? `Bağlı — son senkron: ${new Date(server.lastSync).toLocaleString('tr-TR')}`
-                : 'Bağlı'
-              : 'Çevrimdışı — arkadaşlık ve liderlik özellikleri önbellekten çalışır'
+            syncStatus === 'online'
+              ? 'Çevrimiçi — Supabase bulut veritabanına bağlı'
+              : syncStatus === 'offline'
+                ? 'Çevrimdışı — internet veya bulut erişim sorunu'
+                : server.connected
+                  ? server.lastSync
+                    ? `Bağlı — son senkron: ${new Date(server.lastSync).toLocaleString('tr-TR')}`
+                    : 'Bağlı'
+                  : 'Çevrimdışı — arkadaşlık ve liderlik özellikleri önbellekten çalışır'
           }
           right={
             <View style={styles.serverStatusRow}>
               <View
                 style={[
                   styles.serverDot,
-                  { backgroundColor: server.connected ? C.accent : C.danger },
+                  {
+                    backgroundColor:
+                      syncStatus === 'offline'
+                        ? C.danger
+                        : syncStatus === 'online' || server.connected
+                          ? C.accent
+                          : C.danger,
+                  },
                 ]}
               />
               <Pressable
                 style={[styles.primaryChip, busy === 'server' && styles.chipBusy]}
-                onPress={async () => {
-                  setBusy('server');
-                  await refreshServer();
-                  setBusy('');
-                }}
+                onPress={handleSync}
                 disabled={busy !== ''}
               >
                 <Text style={styles.primaryChipText}>
@@ -309,6 +348,15 @@ export default function SettingsScreen() {
       {/* Yönetici — yalnızca admin hesabıyla görünür */}
       {authUser?.isAdmin ? (
         <Section title="🛡️ Yönetici">
+          <SettingRow
+            label="Yönetici Paneli"
+            description="Kullanıcı ara, yasakla, ceza/ödül ver, hediye gönder"
+            right={
+              <Pressable style={styles.primaryChip} onPress={openAdminPanel}>
+                <Text style={styles.primaryChipText}>Aç</Text>
+              </Pressable>
+            }
+          />
           <SettingRow
             label="Kayıtlı kullanıcı hesabı"
             description="Silinirse cihazda yeni bir hesap açılabilir (admin oturumu sürer)"
