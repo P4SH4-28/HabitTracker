@@ -62,3 +62,22 @@ jobs:
         with:
           name: HabitTracker-App-Release
           path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      # 9. ADIM: APK'yı GitHub Release'e ekliyoruz (sabit indirme linki)
+      # Her derlemede en yeni APK, "latest" release'ine yüklenir.
+      # İndirme linki: https://github.com/P4SH4-28/HabitTracker/releases/latest/download/HabitTracker.apk
+      - name: Release Oluştur (Latest APK)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: En Son APK (Build #${{ github.run_number }})
+          body: |
+            Otomatik derlenen en güncel APK.
+
+            - İndirme linki: `https://github.com/P4SH4-28/HabitTracker/releases/latest/download/HabitTracker.apk`
+            - Build zamanı: $(date -u)
+          files: android/app/build/outputs/apk/release/app-release.apk
+          make_latest: 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
