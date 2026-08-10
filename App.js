@@ -1,4 +1,5 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import {
   DarkTheme,
   NavigationContainer,
@@ -10,41 +11,70 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { DataProvider, useData } from './src/context/DataContext';
+import { MenuProvider } from './src/context/MenuContext';
 import { levelFromTotalXp } from './src/logic';
 import { initErrorReporter, setErrorHandler } from './src/services/errorReporter';
 import { initNotifications } from './src/services/notifications';
+import AppMenu from './src/components/AppMenu';
 import ErrorBoundary, { FatalErrorView } from './src/components/ErrorBoundary';
 import AchievementToast from './src/components/AchievementToast';
 import BackgroundPattern from './src/components/BackgroundPattern';
 import LevelUpModal from './src/components/LevelUpModal';
 import Onboarding from './src/components/Onboarding';
+import TopBar from './src/components/TopBar';
 import AuthScreen from './src/screens/AuthScreen';
 import AdminScreen from './src/screens/AdminScreen';
-import FriendsScreen from './src/screens/FriendsScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import LeaderboardScreen from './src/screens/LeaderboardScreen';
 import ProgressScreen from './src/screens/ProgressScreen';
 import QuestBoardScreen from './src/screens/QuestBoardScreen';
+import SeasonPassScreen from './src/screens/SeasonPassScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import ShopScreen from './src/screens/ShopScreen';
+import SocialScreen from './src/screens/SocialScreen';
 import { resolveTheme, ThemeProvider, useTheme } from './src/theme';
 
 const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
 
-// Global hata yakalayıcı: her şeyden ÖNCE kurulur (modül yüklenme anında).
+// Global hata yakalayıcı: her şeyden ÖNCE kurulur (modül yükleme anında).
 // Yakalanan hatalar ekranda gösterilir (FatalErrorView) ve AsyncStorage'a yazılır.
 initErrorReporter();
 
 const TAB_ICONS = {
   Home: 'home',
-  Quest: 'flag',
   Shop: 'storefront',
   Progress: 'stats-chart',
   Leaderboard: 'trophy',
-  Friends: 'people',
-  Settings: 'settings',
-  Admin: 'shield-checkmark',
+  Social: 'people',
 };
+
+const TAB_TITLES = {
+  Home: 'Bugün',
+  Shop: 'Dükkan',
+  Progress: 'Gelişim',
+  Leaderboard: 'Liderlik',
+  Social: 'Sosyal',
+};
+
+const STACK_TITLES = {
+  QuestBoard: 'Günün Görevleri',
+  SeasonPass: 'Season Pass',
+  Settings: 'Ayarlar',
+  Admin: 'Yönetici Paneli',
+};
+
+// Ortak başlık çubuğu: sekmelerde hamburger (menü), alt ekranlarda geri oku.
+function AppHeader({ navigation, route }) {
+  const canGoBack = navigation.canGoBack();
+  const title = route?.name === 'Main' ? '' : route?.name ? (TAB_TITLES[route.name] || STACK_TITLES[route.name] || '') : '';
+  return (
+    <TopBar
+      title={title}
+      onBack={canGoBack ? () => navigation.goBack() : undefined}
+    />
+  );
+}
 
 function TabNavigator() {
   const { data, leaderboardMinLevel } = useData();
@@ -55,7 +85,8 @@ function TabNavigator() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
-        headerShown: false,
+        headerShown: true,
+        header: (props) => <AppHeader {...props} />,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: {
@@ -98,11 +129,6 @@ function TabNavigator() {
         options={{ tabBarLabel: 'Bugün' }}
       />
       <Tab.Screen
-        name="Quest"
-        component={QuestBoardScreen}
-        options={{ tabBarLabel: 'Görevler' }}
-      />
-      <Tab.Screen
         name="Shop"
         component={ShopScreen}
         options={{ tabBarLabel: 'Dükkan' }}
@@ -118,23 +144,32 @@ function TabNavigator() {
         options={{ tabBarLabel: 'Liderlik' }}
       />
       <Tab.Screen
-        name="Friends"
-        component={FriendsScreen}
-        options={{ tabBarLabel: 'Arkadaşlar' }}
+        name="Social"
+        component={SocialScreen}
+        options={{ tabBarLabel: 'Sosyal' }}
       />
-      <Tab.Screen
-        name="Settings"
-        component={SettingsScreen}
-        options={{ tabBarLabel: 'Ayarlar' }}
-      />
-      {authUser?.isAdmin ? (
-        <Tab.Screen
-          name="Admin"
-          component={AdminScreen}
-          options={{ tabBarLabel: 'Yönetici' }}
-        />
-      ) : null}
     </Tab.Navigator>
+  );
+}
+
+// Kök yığın: sekmeler + menüden açılan alt ekranlar.
+// Menü öğeleri: Günün Görevleri, Season Pass, Ayarlar, Yönetici Paneli.
+function RootNavigator() {
+  const { user: authUser } = useAuth();
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: true,
+        header: (props) => <AppHeader {...props} />,
+        contentStyle: { backgroundColor: 'transparent' },
+      }}
+    >
+      <Stack.Screen name="Main" component={TabNavigator} options={{ headerShown: false }} />
+      <Stack.Screen name="QuestBoard" component={QuestBoardScreen} />
+      <Stack.Screen name="SeasonPass" component={SeasonPassScreen} />
+      <Stack.Screen name="Settings" component={SettingsScreen} />
+      {authUser?.isAdmin ? <Stack.Screen name="Admin" component={AdminScreen} /> : null}
+    </Stack.Navigator>
   );
 }
 
@@ -201,21 +236,25 @@ function Root() {
 
   return (
     <ThemeProvider value={{ colors }}>
-      <View style={[styles.root, { backgroundColor: colors.background }]}>
-        {/* Tema deseni: ekranlar saydam olduğu için aradan görünür. */}
-        <BackgroundPattern />
-        {/* Navigasyon ağacı: sekmeler + tüm ekranlar burada çalışır. */}
-        <NavigationContainer theme={navTheme}>
-          <StatusBar style="light" />
-          <TabNavigator />
-        </NavigationContainer>
-        {/* Kök seviye kaplamalar: her sekmenin ÜZERİNDE görünürler.
-            Toast: başarım/pomodoro bildirimleri. Modal: seviye atlama kutlaması. */}
-        <AchievementToast />
-        <LevelUpModal />
-        {/* İlk açılış rehberi: yalnızca ilk girişte, admin hesabına gösterilmez. */}
-        {!authUser?.isAdmin ? <Onboarding /> : null}
-      </View>
+      <MenuProvider>
+        <View style={[styles.root, { backgroundColor: colors.background }]}>
+          {/* Tema deseni: ekranlar saydam olduğu için aradan görünür. */}
+          <BackgroundPattern />
+          {/* Navigasyon ağacı: sekmeler + menü ekranları burada çalışır. */}
+          <NavigationContainer theme={navTheme}>
+            <StatusBar style="light" />
+            <RootNavigator />
+            {/* Sol menü (drawer): Günün Görevleri / Season Pass / Ayarlar / Yönetici */}
+            <AppMenu />
+          </NavigationContainer>
+          {/* Kök seviye kaplamalar: her sekmenin ÜZERİNDE görünürler.
+              Toast: başarım/pomodoro bildirimleri. Modal: seviye atlama kutlaması. */}
+          <AchievementToast />
+          <LevelUpModal />
+          {/* İlk açılış rehberi: yalnızca ilk girişte, admin hesabına gösterilmez. */}
+          {!authUser?.isAdmin ? <Onboarding /> : null}
+        </View>
+      </MenuProvider>
     </ThemeProvider>
   );
 }
@@ -277,8 +316,3 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 });
-
-
-
-
-

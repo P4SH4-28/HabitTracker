@@ -22,7 +22,6 @@ import {
   dateKey,
   dayPenalty,
   emptyDayCounter,
-  formatDuration,
   levelFromTotalXp,
   MAX_ACTIVE_HABITS,
   POMODORO_DURATION_MS,
@@ -34,10 +33,17 @@ import { evaluateAchievements } from '../data/achievements';
 import {
   bumpDay,
   canClaimQuest,
+  DAILY_QUESTS,
   getQuest,
-  QUEST_CATALOG,
+  questClaimedToday,
+  questProgress,
+  questReward,
   QUEST_DIFFICULTIES,
+  VIP_DURATION_MS,
+  VIP_PRICE_GOLD,
+  VIP_QUESTS,
 } from '../data/quests';
+import { getPassLevel, PASS_MAX_LEVEL, passRewardClaimed } from '../data/seasonPass';
 import {
   FREE_AVATARS,
   FREE_FRAMES,
@@ -64,6 +70,7 @@ import {
 } from '../services/duelService';
 import { getLeaderboardData } from '../services/leaderboardService';
 import { claimQuestServer, getServerProfile, updateProfileData } from '../services/profileService';
+import { purchaseVip } from '../services/vipService';
 
 // Depolama anahtarları HESABA ÖZELDİR: her hesabın verisi kendi anahtarında
 // saklanır; hesap değişince veri de değişir. "name" önce güvenli hale getirilir
@@ -113,7 +120,7 @@ const INITIAL_STATE = {
     // XP KUMBARASI: günlük tavanı aşan XP burada birikir, günde 500'e kadar geri verilir.
     xpBank: 0,
   },
-    settings: { xpPerHabit: 25, pomodoroXp: 50, avatarId: 'av_fox', themeId: 'dark', devOffset: 0, frameId: null, penaltyEnabled: true, reminderHour: null, osNotify: false },
+    settings: { xpPerHabit: 25, pomodoroXp: 50, avatarId: 'av_fox', themeId: 'dark', devOffset: 0, frameId: null, penaltyEnabled: true, reminderHour: null, osNotify: false, vipUntil: 0 },
   friends: [],
   players: [],
   // Açılmış başarımların id listesi (AsyncStorage'a otomatik kaydedilir).
@@ -124,10 +131,14 @@ const INITIAL_STATE = {
   ownedThemes: ['dark', 'mono'],
   // Dükkan'dan satın alınan avatar çerçevesi id'leri (ücretsizler baştan verilir).
   ownedFrames: FREE_FRAMES,
-  // Görev panosu durumu: { [görevId]: { ts, value } }
-  // ts = son ödül alım zamanı (bekleme süresi bundan hesaplanır),
-  // value = otomatik görevlerde alım anındaki günlük sayaç (ilerlemeyi sıfırlar).
+  // Season Pass'ten açılan rozetler (profilde sergilenir).
+  ownedBadges: [],
+  // Görev panosu durumu: { [görevId]: { day, ts, value } }
+  // day = ödülün alındığı gün anahtarı (günde bir kez alınır),
+  // ts = son ödül alım zamanı, value = alım anındaki günlük sayaç.
   questClaims: {},
+  // Season Pass ödül kutusu alımları: { "3_free": true, "5_vip": true }
+  passClaims: {},
   // Pomodoro oturumu. state: idle (boşta) | running (çalışıyor) | paused (duraklatıldı).
   // "endAt" süre bitiş anıdır; böylece uygulama kapansa bile süre doğru işler.
   pomodoro: { state: 'idle', endAt: 0, remainingMs: POMODORO_DURATION_MS },
@@ -192,6 +203,11 @@ export function DataProvider({ children }) {
 
   // Seviye atlama olayı: { level, ts } — kutlama modalı bu değeri görünce açar.
   const [levelUpEvent, setLevelUpEvent] = useState(null);
+  // Senkronizasyon bekliyor bayrağı: yerel veri değişti ama sunucuya henüz
+  // aktarılmadı. Başarılı senkron bu bayrağı temizler; ekranlardaki
+  // "Senkronizasyon Bekliyor" göstergesi bu değeri okur (tıklayınca manuel
+  // senkron tetiklenir).
+  const [pendingSync, setPendingSync] = useState(false);
   // Ekranın üstünden kayan bildirim kuyruğu (başarım + pomodoro ödülü).
   // Her öğe: { key, icon, title, color }.
   const [toasts, setToasts] = useState([]);
@@ -383,16 +399,26 @@ export function DataProvider({ children }) {
               ownedFrames: Array.isArray(parsed.ownedFrames)
                 ? parsed.ownedFrames
                 : INITIAL_STATE.ownedFrames,
-              // Eski görev sistemi (v5) alanları yüklenmez; görev panosu temiz başlar.
+              ownedBadges: Array.isArray(parsed.ownedBadges)
+                ? parsed.ownedBadges
+                : [],
+              // Yeni nesil görev sistemi: yalnızca bilinen görev id'leri yüklenir
+              // (eski 60 görevlik katalog kayıtları atılır).
               questClaims:
                 parsed.questClaims &&
                 typeof parsed.questClaims === 'object' &&
                 !Array.isArray(parsed.questClaims)
                   ? Object.fromEntries(
                       Object.entries(parsed.questClaims).filter(([id]) =>
-                        QUEST_CATALOG.some((q) => q.id === id)
+                        [...DAILY_QUESTS, ...VIP_QUESTS].some((q) => q.id === id)
                       )
                     )
+                  : {},
+              passClaims:
+                parsed.passClaims &&
+                typeof parsed.passClaims === 'object' &&
+                !Array.isArray(parsed.passClaims)
+                  ? parsed.passClaims
                   : {},
               pomodoro: { ...INITIAL_STATE.pomodoro, ...(parsed.pomodoro || {}) },
             });
@@ -417,6 +443,16 @@ export function DataProvider({ children }) {
       JSON.stringify({ version: DATA_VERSION, ...data })
     ).catch((e) => console.warn('Veri kaydedilirken hata oluştu:', e));
   }, [data, loading, activeAccount]);
+
+  // ---------- Senkronizasyon bekliyor takibi ----------
+  // Yerel veri her değiştiğinde (oturum açıkken) "bekliyor" bayrağı
+  // kaldırılır yalnızca başarılı senkronda. Böylece kullanıcı çevrimdışı
+  // işlem yaptığında göstergede "Senkronizasyon Bekliyor" görünür.
+  useEffect(() => {
+    if (!loading && authStatus === 'in' && activeAccount) {
+      setPendingSync(true);
+    }
+  }, [data, loading, authStatus, activeAccount]);
 
   // ---------- Gün takibi: gece yarısı geçişini algıla ----------
   useEffect(() => {
@@ -964,6 +1000,9 @@ export function DataProvider({ children }) {
       await refreshServerMeta(name);
       await pullServer();
       setServer((s) => ({ ...s, connected: true }));
+      // Yerel veri sunucuya aktarıldı → "bekliyor" bayrağı temizlenir.
+      // Senkron sırasında veri değiştiyse (referans farkı) beklemeye devam eder.
+      if (dataRef.current === snap) setPendingSync(false);
     } catch (e) {
       setServer((s) => ({ ...s, connected: false }));
     } finally {
@@ -1320,6 +1359,13 @@ export function DataProvider({ children }) {
 
   // ---------- Dükkan eylemleri ----------
 
+  // VIP aktif mi? (satın alınan süre henüz dolmadıysa)
+  // Karar SUNUCU saatine göre verilir (cihaz saati oynatılamaz).
+  const isVipActive = useCallback((snap, now) => {
+    const until = snap?.settings?.vipUntil || 0;
+    return until > now;
+  }, []);
+
   // Avatar satın alır: altın yeterliyse ödeme yapılır ve "ownedAvatars"a eklenir.
   // Yetersiz altın veya zaten sahip olunan ürünlerde veri değişmez.
   const buyAvatar = useCallback((id) => {
@@ -1367,11 +1413,13 @@ export function DataProvider({ children }) {
   }, []);
 
   // Avatar çerçevesi satın alır: altın yeterliyse ödeme yapılır ve
-  // "ownedFrames"a eklenir.
+  // "ownedFrames"a eklenir. VIP çerçeveleri (Lottie auralar) yalnızca
+  // aktif VIP kullanıcılara açıktır (Season Pass ödülü + dükkan görünümü).
   const buyFrame = useCallback((id) => {
     setData((d) => {
       const frame = getFrame(id);
       if (!frame || d.ownedFrames.includes(id)) return d;
+      if (frame.vip && !isVipActive(d, serverNow())) return d;
       if ((d.stats.gold || 0) < frame.price) return d;
       return {
         ...d,
@@ -1389,22 +1437,18 @@ export function DataProvider({ children }) {
     });
   }, []);
 
-  // ---------- Görev panosu eylemleri ----------
+  // ---------- Görev panosu eylemleri (yeni nesil: günde 4+4 görev) ----------
 
   // Görev ödülünü alır. Kurallar (bkz. quests.js):
-  // - Bekleme süresi dolmuş olmalı (zorluğa göre 30dk-2saat).
-  // - Otomatik görevlerde hedef tamamlanmış olmalı (günlük sayaçlarla ölçülür).
-  // - Otomatik görevler XP + altın, manuel görevler YALNIZCA altın verir
-  //   (manuel görevler liderlik tablosunu kirletmesin diye XP vermez).
-  // Ödül alınınca görevin beklemesi başlar; otomatik görevlerde ilerleme
-  // anlık görüntüyle (value) sıfırlanır, sayaç ilerledikçe yeniden dolar.
-  // Görev ödülünü alır — KATMAN 3 doğrulamalı (hileci duvarı).
+  // - Her görev GÜNDE BİR KEZ ödül verir (gün anahtarı sunucu saati).
+  // - Otomatik görevlerde hedef bugünkü sayaçlarla tamamlanmış olmalı.
+  // - VIP: temel görevlerde ×1.5 çarpan, +4 ekstra VIP görev açılır.
+  // KATMAN 3 doğrulamalı (hileci duvarı):
   // 1) Yerel hızlı kontrol: buton görsel olarak hazır mı?
   // 2) Sunucu senkronu: offset'i tazeler (cihaz saati oynatılmışsa düzeltir)
-  //    ve ödül öncesi bağlantıyı doğrular. Bağlantı yoksa veya saat
-  //    doğrulanamadıysa ödül VERİLMEZ.
-  // 3) sync-quest Edge Function: bekleme süresi + günlük ödül limiti SUNUCU
-  //    saatine göre doğrulanır; reddedilirse ödül verilmez.
+  //    ve ödül öncesi bağlantıyı doğrular. Bağlantı yoksa ödül VERİLMEZ.
+  // 3) sync-quest Edge Function: günlük alım + VIP durumu SUNUCU saatine
+  //    göre doğrulanır; onaylanan ödül MİKTARI sunucudan gelir.
   // 4) Onay gelince kumbara/altın yoluyla yerel ödül uygulanır.
   const claimingRef = useRef(false);
   const claimQuest = useCallback(
@@ -1412,7 +1456,8 @@ export function DataProvider({ children }) {
       const quest = getQuest(questId);
       if (!quest) return;
       const snap = dataRef.current;
-      if (!canClaimQuest(quest, snap.stats.day, snap.questClaims || {}, serverNow())) return;
+      const today = offsetToday();
+      if (!canClaimQuest(quest, snap.stats.day, snap.questClaims || {}, today)) return;
       // Çift basma / eşzamanlı ödül koruması.
       if (claimingRef.current) return;
       claimingRef.current = true;
@@ -1439,11 +1484,13 @@ export function DataProvider({ children }) {
             return;
           }
           const title =
-            res.error === 'cooldown'
-              ? `⏳ Bekleme süresi dolmadı — ${formatDuration(res.remainingMs || 0)} kaldı`
-              : res.error === 'daily_claim_limit'
-                ? 'Günlük görev ödül limitine ulaşıldı — yarın tekrar dene'
-                : 'Görev ödülü sunucuda doğrulanamadı — tekrar dene';
+            res.error === 'already_claimed_today'
+              ? 'Bu görevin ödülü bugün zaten alındı — yarın tekrar dene'
+              : res.error === 'vip_required'
+                ? 'Bu görev yalnızca VIP kullanıcılara açık'
+                : res.error === 'invalid_quest'
+                  ? 'Görev bulunamadı'
+                  : 'Görev ödülü sunucuda doğrulanamadı — tekrar dene';
           setToasts((prev) => [
             ...prev,
             {
@@ -1455,10 +1502,12 @@ export function DataProvider({ children }) {
           ]);
           return;
         }
-        // Sunucu onayladı → yerel ödülü uygula (XP kumbarası + altın tavanı).
-        const diff = QUEST_DIFFICULTIES[quest.difficulty];
-        const xpGain = quest.type === 'auto' ? diff.xp : 0;
-        const today = offsetToday();
+        // Sunucu onayladı → ödül miktarı sunucudan gelir (istemci hesaplamaz).
+        // Sunucu yanıtında ödül yoksa (eski fonksiyon) yerel hesaplama yapılır.
+        const reward =
+          res.data?.reward || questReward(quest, isVipActive(snap, serverNow()));
+        const xpGain = reward.xp || 0;
+        const goldGain = reward.gold || 0;
         setData((d) => {
           const q = getQuest(questId);
           const claims = d.questClaims || {};
@@ -1472,8 +1521,8 @@ export function DataProvider({ children }) {
               : emptyDayCounter(today);
           const bankState = applyXpWithBank(dayBase, d.stats.xpBank || 0, xpGain);
           const cappedXp = bankState.freshXp + bankState.releaseXp;
-          const cappedGold = Math.min(diff.gold, Math.max(0, DAILY_GOLD_CAP - dayBase.goldEarned));
-          const metricValue = q.type === 'auto' ? (d.stats.day?.[q.metric] ?? 0) : 0;
+          const cappedGold = Math.min(goldGain, Math.max(0, DAILY_GOLD_CAP - dayBase.goldEarned));
+          const metricValue = d.stats.day?.key === today ? (d.stats.day?.[q.metric] ?? 0) : 0;
           const nextStats = bumpDay(
             {
               ...d.stats,
@@ -1492,8 +1541,8 @@ export function DataProvider({ children }) {
           };
           return {
             ...d,
-            // Bekleme zaman damgası sunucu saatine göre yazılır (saat oynatma koruması).
-            questClaims: { ...claims, [questId]: { ts: serverNow(), value: metricValue } },
+            // Günlük alım kaydı: gün anahtarı sunucu saatinden gelir (saat oynatma koruması).
+            questClaims: { ...claims, [questId]: { day: today, ts: serverNow(), value: metricValue } },
             // XP seviye atlama efektini tetikler; altın günlük sayaca işlenir.
             stats: nextStats,
           };
@@ -1503,7 +1552,7 @@ export function DataProvider({ children }) {
           {
             key: `quest_${questId}_${Date.now()}`,
             icon: quest.emoji,
-            title: `${quest.title} tamamlandı! ${xpGain ? `+${xpGain} XP ` : ''}+${diff.gold} 🪙`,
+            title: `${quest.title} tamamlandı! +${xpGain} XP, +${goldGain} 🪙`,
             color: COLORS.accent,
           },
         ]);
@@ -1512,6 +1561,119 @@ export function DataProvider({ children }) {
       }
     },
     [refreshServer, refreshServerMeta]
+  );
+
+  // ---------- VIP (Season Pass) satın alma ----------
+  // Altın bakiyesi 'vip-action' Edge Function'ında SUNUCU tarafında
+  // doğrulanır; onay gelince yerel altın düşülür ve süre yazılır.
+  // İki taraf da aynı miktarı düştüğü için delta senkronu ayrışmaz.
+  const buyVip = useCallback(async () => {
+    const name = authRef.current?.name || dataRef.current?.settings.name || 'Kullanıcı';
+    const r = await purchaseVip(name);
+    if (!r.ok) {
+      if (r.error === 'banned') {
+        await refreshServerMeta(name);
+        return { ok: false, error: 'banned' };
+      }
+      return { ok: false, error: r.error || 'Satın alınamadı' };
+    }
+    const vipUntil = r.data?.vipUntil;
+    if (!vipUntil) return { ok: false, error: 'Sunucu yanıtı geçersiz' };
+    setData((d) => ({
+      ...d,
+      settings: { ...d.settings, vipUntil: Date.parse(vipUntil) || d.settings.vipUntil },
+      stats: { ...d.stats, gold: Math.max(0, (d.stats.gold || 0) - VIP_PRICE_GOLD) },
+    }));
+    setToasts((prev) => [
+      ...prev,
+      {
+        key: `vip_${Date.now()}`,
+        icon: '👑',
+        title: 'VIP oldun! 30 gün boyunca ekstra görevler ve ödül çarpanı açık',
+        color: COLORS.gold,
+      },
+    ]);
+    await refreshServer();
+    return { ok: true };
+  }, [refreshServer, refreshServerMeta]);
+
+  // ---------- Season Pass ödül kutusu alma ----------
+  // Pass seviyesi toplam XP'den türetilir; her seviyede Free + VIP kutusu.
+  // VIP kutuları yalnızca aktif VIP üyelerine açıktır (yerel kontrol;
+  // ödül türleri sadece envanter/altın olduğu için sunucu onayı gerekmez).
+  const claimPassReward = useCallback(
+    (level, track) => {
+      const lvl = getPassLevel(level);
+      if (!lvl) return { ok: false, error: 'Seviye bulunamadı' };
+      const reward = track === 'vip' ? lvl.vip : lvl.free;
+      if (!reward) return { ok: false, error: 'Bu seviyede ödül kutusu yok' };
+      const snap = dataRef.current;
+      if (passRewardClaimed(snap.passClaims, level, track)) {
+        return { ok: false, error: 'Ödül zaten alınmış' };
+      }
+      if (level > PASS_MAX_LEVEL) return { ok: false, error: 'Seviye aşıldı' };
+      if (track === 'vip' && !isVipActive(snap, serverNow())) {
+        return { ok: false, error: 'Bu ödül için VIP gerekli' };
+      }
+      let goldGain = 0;
+      let ownedThemes = null;
+      let ownedAvatars = null;
+      let ownedFrames = null;
+      let ownedBadges = null;
+      const addUnique = (arr, id) => (arr.includes(id) ? arr : [...arr, id]);
+      switch (reward.type) {
+        case 'gold':
+          goldGain = reward.amount;
+          break;
+        case 'theme':
+          ownedThemes = addUnique(snap.ownedThemes, reward.themeId);
+          break;
+        case 'avatar':
+          ownedAvatars = addUnique(snap.ownedAvatars, reward.avatarId);
+          break;
+        case 'frame':
+        case 'lottieFrame':
+          ownedFrames = addUnique(snap.ownedFrames, reward.frameId);
+          break;
+        case 'badge':
+          ownedBadges = addUnique(snap.ownedBadges, reward.badgeId);
+          break;
+        default:
+          return { ok: false, error: 'Bilinmeyen ödül' };
+      }
+      setData((d) => {
+        const today = offsetToday();
+        // Altın ödülü günlük kazanç sayacına işlenir (sunucu tavanıyla tutarlı).
+        const stats = goldGain
+          ? bumpDay(
+              { ...d.stats, gold: (d.stats.gold || 0) + goldGain },
+              today,
+              { goldEarned: goldGain }
+            )
+          : d.stats;
+        return {
+          ...d,
+          passClaims: { ...(d.passClaims || {}), [`${level}_${track}`]: true },
+          ownedThemes: ownedThemes || d.ownedThemes,
+          ownedAvatars: ownedAvatars || d.ownedAvatars,
+          ownedFrames: ownedFrames || d.ownedFrames,
+          ownedBadges: ownedBadges || d.ownedBadges,
+          stats,
+        };
+      });
+      const label = track === 'vip' ? 'VIP' : 'Free';
+      setToasts((prev) => [
+        ...prev,
+        {
+          key: `pass_${level}_${track}_${Date.now()}`,
+          icon: '🎁',
+          title: `Sezon ${level}. seviye ${label} ödülü açıldı! ${goldGain ? `+${goldGain} 🪙` : ''}`,
+          color: COLORS.gold,
+        },
+      ]);
+      return { ok: true };
+    },
+    []
   );
 
   // Tüm veriyi (ana + yedek) temizler ve başlangıç durumuna döner.
@@ -1527,6 +1689,10 @@ export function DataProvider({ children }) {
       userBackupKeyFor(name),
     ]).catch((e) => console.warn('Sıfırlama sırasında hata:', e));
   }, [activeAccount]);
+
+  // VIP durumu (salt okunur): ayarlardaki süre sunucu saatini geçmediyse aktif.
+  // Ekranlar bu değerle VIP görevlerini/ödüllerini gösterir.
+  const vipActive = isVipActive(data, serverNow());
 
   // Context değeri yalnızca ilgili değişkenler değişince yenilenir (memo).
   const value = useMemo(
@@ -1571,6 +1737,10 @@ export function DataProvider({ children }) {
       buyFrame,
       selectFrame,
       claimQuest,
+      buyVip,
+      claimPassReward,
+      vipActive,
+      pendingSync,
       leaderboardMinLevel: LEADERBOARD_MIN_LEVEL,
       leaderboardMinXp: LEADERBOARD_MIN_XP,
     }),
@@ -1614,6 +1784,10 @@ export function DataProvider({ children }) {
       buyFrame,
       selectFrame,
       claimQuest,
+      buyVip,
+      claimPassReward,
+      vipActive,
+      pendingSync,
     ]
   );
 

@@ -3,12 +3,59 @@
 // Emoji tabanlıdır; "emoji" verilirse doğrudan, verilmezse
 // "avatarId" ile dükkan ürününe bakıp emojiyi bulur.
 // "frameId" verilirse avatarın etrafına dükkan çerçevesinin
-// emojilerinden oluşan bir halka sarılır (FrameDecor).
+// emojilerinden oluşan bir halka sarılır (FrameDecor). Çerçeve
+// Lottie animasyonluysa (Season Pass VIP çerçeveleri) avatarın
+// arkasında dönen animasyon (LottieView) oynatılır.
 // ============================================================
 import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import LottieView from 'lottie-react-native';
 import { getAvatarEmoji, getFrame } from '../data/shop';
 import { useTheme } from '../theme';
+
+// Lottie animasyon kaynakları (assets/lottie/*.json).
+export const LOTTIE_SOURCES = {
+  heart: require('../../assets/lottie/heart.json'),
+  flame: require('../../assets/lottie/flame.json'),
+  glow: require('../../assets/lottie/glow.json'),
+};
+
+export function getLottieSource(frameId) {
+  const frame = getFrame(frameId);
+  if (!frame?.lottie) return null;
+  return LOTTIE_SOURCES[frame.lottie] || null;
+}
+
+// Lottie çerçeve sarmalayıcısı: animasyonu avatarın arkasında döndürür.
+export function LottieFrame({ frame, size, style, children }) {
+  const source = getLottieSource(frame?.id);
+  if (!source) return children;
+  return (
+    <View
+      style={[
+        {
+          width: size,
+          height: size,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        style,
+      ]}
+    >
+      <LottieView
+        source={source}
+        autoPlay
+        loop
+        style={{
+          position: 'absolute',
+          width: size * 1.9,
+          height: size * 1.9,
+        }}
+      />
+      {children}
+    </View>
+  );
+}
 
 // Çerçeve halkası: verilen emojiyi avatarın çevresinde 8 noktada gösterir.
 // Her avatar boyutuna ölçeklenir; çocuk öğe (avatar) ortada kalır.
@@ -72,6 +119,14 @@ export default function AvatarCircle({ avatarId, emoji, frameId, size = 44, ring
     </View>
   );
   if (!frame) return circle;
+  // Lottie çerçeve: animasyon avatarın arkasında oynar.
+  if (frame.lottie) {
+    return (
+      <LottieFrame frame={frame} size={size} style={style}>
+        {circle}
+      </LottieFrame>
+    );
+  }
   return (
     <FrameDecor ring={frame.emoji} size={size} style={style}>
       {circle}

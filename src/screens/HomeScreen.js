@@ -18,9 +18,8 @@ import NotificationBell from '../components/NotificationBell';
 import PomodoroTimer from '../components/PomodoroTimer';
 import XpBar from '../components/XpBar';
 import { useData } from '../context/DataContext';
-import { canClaimQuest, getQuest, QUEST_CATALOG } from '../data/quests';
-import { DAILY_XP_CAP, dateKey, levelFromTotalXp, MAX_ACTIVE_HABITS } from '../logic';
-import { serverNow } from '../services/serverClock';
+import { canClaimQuest, DAILY_QUESTS, questClaimedToday, VIP_QUESTS } from '../data/quests';
+import { DAILY_XP_CAP, levelFromTotalXp, MAX_ACTIVE_HABITS } from '../logic';
 import { useTheme } from '../theme';
 
 export default function HomeScreen() {
@@ -35,16 +34,15 @@ export default function HomeScreen() {
   const [modalVisible, setModalVisible] = useState(false);
 
   // Görev özeti: bugün bitirilen görev sayısı + şu an ödülü hazır olanlar.
-  // Bekleme süreleri sunucu saatine göre hesaplanır (saat oynatma koruması).
+  // Görevler günde bir kez alınır; gün anahtarı sunucu saatinden gelir.
   const questSummary = useMemo(() => {
     const claims = data.questClaims || {};
-    const doneToday = Object.entries(claims).filter(
-      ([id, c]) => c?.ts && dateKey(new Date(c.ts)) === today && getQuest(id)
+    const all = [...DAILY_QUESTS, ...VIP_QUESTS];
+    const doneToday = all.filter((q) => questClaimedToday(q, claims, today)).length;
+    const readyCount = all.filter((q) =>
+      canClaimQuest(q, data.stats.day, claims, today)
     ).length;
-    const readyCount = QUEST_CATALOG.filter((q) =>
-      canClaimQuest(q, data.stats.day, claims, serverNow())
-    ).length;
-    return { doneToday, readyCount };
+    return { doneToday, readyCount, total: all.length };
   }, [data.questClaims, data.stats.day, today]);
 
   // Bugünkü ilerleme: tamamlanan / toplam alışkanlık
@@ -91,9 +89,9 @@ export default function HomeScreen() {
           todayCap={DAILY_XP_CAP}
         />
       </View>
-      <Pressable style={styles.questCard} onPress={() => navigation.navigate('Quest')}>
+      <Pressable style={styles.questCard} onPress={() => navigation.navigate('QuestBoard')}>
         <View style={styles.questCardTop}>
-          <Text style={styles.questCardTitle}>🎯 Görevler</Text>
+          <Text style={styles.questCardTitle}>🎯 Günün Görevleri</Text>
           {questSummary.readyCount > 0 ? (
             <View style={[styles.questReadyChip, { backgroundColor: C.accent + '22' }]}>
               <Text style={[styles.questReadyText, { color: C.accent }]}>
@@ -106,9 +104,9 @@ export default function HomeScreen() {
         </View>
         <Text style={styles.questCardHint}>
           {questSummary.doneToday > 0
-            ? `Bugün ${questSummary.doneToday} görev tamamladın`
+            ? `Bugün ${questSummary.doneToday}/${questSummary.total} görev tamamladın`
             : 'Henüz görev bitirmedin'}{' '}
-          • Zorluğa göre XP ve altın kazan →
+          • Görevler her gün sıfırlanır →
         </Text>
       </Pressable>
       <PomodoroTimer />

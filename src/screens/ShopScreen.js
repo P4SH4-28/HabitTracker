@@ -17,7 +17,7 @@ import { THEMES, useTheme } from '../theme';
 export default function ShopScreen() {
   const { colors: C } = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
-  const { data, buyAvatar, selectAvatar, buyTheme, selectTheme, buyFrame, selectFrame } = useData();
+  const { data, buyAvatar, selectAvatar, buyTheme, selectTheme, buyFrame, selectFrame, vipActive } = useData();
   const gold = data.stats.gold || 0;
   const ownedAvatars = data.ownedAvatars || [];
   const ownedThemes = data.ownedThemes || [];
@@ -26,6 +26,8 @@ export default function ShopScreen() {
   const currentItem = getShopItem(currentAvatar);
   const currentThemeId = data.settings.themeId || 'dark';
   const currentFrameId = data.settings.frameId || null;
+  // VIP çerçeveler yalnızca aktif VIP kullanıcılara gösterilir.
+  const shopFrames = FRAMES.filter((f) => !f.vip || vipActive);
 
   return (
     <ScrollView
@@ -69,7 +71,7 @@ export default function ShopScreen() {
           <Text style={styles.howItem}>✅ Alışkanlık tamamla +5</Text>
           <Text style={styles.howItem}>🍅 Odak seansı bitir +15</Text>
           <Text style={styles.howItem}>🏆 Başarım aç +25..250</Text>
-          <Text style={styles.howItem}>🎯 Görev ödülleri +5..40</Text>
+          <Text style={styles.howItem}>🎯 Günlük görevler +20..150</Text>
         </View>
       </View>
 
@@ -176,21 +178,31 @@ export default function ShopScreen() {
       {/* Çerçeve ızgarası */}
       <Text style={styles.sectionTitle}>Avatar Çerçeveleri</Text>
       <View style={styles.grid}>
-        {FRAMES.map((frame) => {
+        {shopFrames.map((frame) => {
           const isOwned = ownedFrames.includes(frame.id);
           const isSelected = currentFrameId === frame.id;
           const affordable = gold >= frame.price;
           return (
             <View key={frame.id} style={styles.itemCard}>
-              <FrameDecor ring={frame.emoji} size={64}>
-                <View style={styles.frameAvatar}>
-                  <Text style={styles.frameAvatarEmoji}>
-                    {currentItem?.emoji || '😀'}
-                  </Text>
-                </View>
-              </FrameDecor>
+              {frame.lottie ? (
+                // Lottie çerçeve: canlı animasyonlu aura önizlemesi
+                <AvatarCircle
+                  avatarId={currentAvatar}
+                  frameId={frame.id}
+                  size={64}
+                  ringColor={isSelected ? C.gold : C.border}
+                />
+              ) : (
+                <FrameDecor ring={frame.emoji} size={64}>
+                  <View style={styles.frameAvatar}>
+                    <Text style={styles.frameAvatarEmoji}>
+                      {currentItem?.emoji || '😀'}
+                    </Text>
+                  </View>
+                </FrameDecor>
+              )}
               <Text style={styles.itemName} numberOfLines={1}>
-                {frame.name}
+                {frame.vip ? '👑 ' : ''}{frame.name}
               </Text>
               {isSelected ? (
                 <View style={[styles.itemBtn, styles.btnSelected]}>
@@ -214,7 +226,7 @@ export default function ShopScreen() {
                   onPress={() => buyFrame(frame.id)}
                 >
                   <Text style={[styles.btnBuyText, !affordable && styles.btnDisabledText]}>
-                    🪙 {frame.price}
+                    {frame.price > 0 ? `🪙 ${frame.price}` : '👑 VIP'}
                   </Text>
                 </Pressable>
               )}
@@ -222,6 +234,15 @@ export default function ShopScreen() {
           );
         })}
       </View>
+
+      {!vipActive && (
+        <View style={styles.vipHint}>
+          <Text style={styles.vipHintText}>
+            👑 Aurora çerçeveler Season Pass'te seni bekliyor — VIP olarak
+            hepsini açabilirsin!
+          </Text>
+        </View>
+      )}
 
       <View style={styles.noteBox}>
         <Text style={styles.noteText}>
@@ -446,6 +467,18 @@ function makeStyles(C) {
     },
     noteText: {
       color: C.textMuted,
+      fontSize: 12,
+      lineHeight: 18,
+    },
+    vipHint: {
+      backgroundColor: C.gold + '1a',
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: C.gold + '55',
+      padding: 14,
+    },
+    vipHintText: {
+      color: C.text,
       fontSize: 12,
       lineHeight: 18,
     },

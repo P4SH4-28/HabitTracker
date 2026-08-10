@@ -86,6 +86,14 @@ export const FRAMES = [
   // ----- Özel (nadir) -----
   { id: 'fr_neon', name: 'Neon', emoji: '✨', price: 750 },
   { id: 'fr_dragon', name: 'Ejderha', emoji: '🐉', price: 1000 },
+
+  // ----- Season Pass VIP (Lottie animasyonlu) -----
+  // Altınla satılmaz; Season Pass VIP ödülü olarak açılır.
+  // "lottie": assets/lottie/ altındaki animasyon dosyası adı.
+  // "vip": true → yalnızca VIP kullanıcılar görür/satın alır.
+  { id: 'fr_lottie_heart', name: 'Kalp Aurası', emoji: '❤️', price: 0, vip: true, lottie: 'heart', color: '#FF5B7F' },
+  { id: 'fr_lottie_flame', name: 'Alev Aurası', emoji: '🔥', price: 0, vip: true, lottie: 'flame', color: '#FF7A3D' },
+  { id: 'fr_lottie_glow', name: 'Işıltı Aurası', emoji: '✨', price: 0, vip: true, lottie: 'glow', color: '#FFD166' },
 ];
 
 // Fiyatı 0 olanlar: yeni kullanıcıya baştan verilir.

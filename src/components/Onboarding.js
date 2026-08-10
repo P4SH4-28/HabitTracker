@@ -26,7 +26,12 @@ const PAGES = [
   {
     emoji: '🍅',
     title: 'Pomodoro ve Görevler',
-    text: 'Odak seanslarıyla üretkenliğini artır, görev panosundan ödüller topla ve arkadaşlarınla liderlikte yarış.',
+    text: 'Odak seanslarıyla üretkenliğini artır, günlük görevlerden ödüller topla ve arkadaşlarınla liderlikte yarış.',
+  },
+  {
+    emoji: '🌱',
+    title: 'Kişisel gelişim yolculuğun',
+    text: 'Bu uygulama senin kişisel gelişim yolculuğun. Hile yaparsan sadece kendi geleceğini kandırırsın.',
   },
 ];
 

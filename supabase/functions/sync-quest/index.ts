@@ -1,15 +1,19 @@
 // ============================================================
 // sync-quest — Supabase Edge Function (Habit Tracker Katman 3)
-// Görev ödüllerini SUNUCU SAATİNE göre doğrular (hileci duvarı):
-// - Bekleme süresi (cooldown) sunucu saatiyle hesaplanır → cihaz saati
-//   ileri alınsa bile görev süresinden önce yeniden ödül alınamaz.
-// - Günlük ödül sayısı sunucuda sınırlanır (MAX_CLAIMS_PER_DAY) → "Yaptım"
-//   spam'ı ile sınırsız altın kasılamaz.
-// - Yasaklı hesapların ödül onayı tamamen durdurulur.
-// - Fonksiyon ödül MİKTARI vermez; yalnızca onay döner. Altın/XP miktarları
-//   yine sync-profile'in günlük tavan defterinden geçer (çifte sayım olmaz).
+// Günlük görev ödüllerini SUNUCU SAATİNE göre doğrular (hileci duvarı):
+// - Yeni nesil sistem: her görev günde BİR KEZ ödül verir (günlük
+//   sıfırlama). Bekleme süresi (cooldown) yoktur; gün anahtarı
+//   sunucu saatinden alınır → cihaz saati ileri alınsa bile aynı
+//   günün ödülü ikinci kez alınamaz.
+// - VIP durumu sunucudan okunur (profiles.vip_until); temel görevler
+//   VIP kullanıcıya ×1.5 çarpanla ödüllendirilir. İstemcinin gönderdiği
+//   VIP bayrağına GÜVENİLMEZ — karar sunucu verisine dayanır.
+// - Ödül MİKTARI burada hesaplanıp istemciye döner (istemci aynı
+//   miktarı uygular). Altın/XP toplamları yine sync-profile'in günlük
+//   tavan defterinden geçer (çifte sayım olmaz).
 //
-// Gereksinim: quest_claims tablosu (bkz. supabase/quest-claims.sql).
+// Gereksinim: quest_claims tablosu (bkz. supabase/quest-claims.sql) ve
+// profiles.vip_until sütunu (bkz. supabase/social.sql).
 //
 // Deploy: Supabase Dashboard → Edge Functions → yapıştır → Deploy
 // (JWT doğrulaması KAPALI olmalı: "Verify JWT" işaretsiz bırakılır —
@@ -22,84 +26,39 @@ const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
 // Zorluklar — istemcideki src/data/quests.js ile BİREBİR aynı olmalı.
 const DIFF = {
-  easy: { cooldownMs: 30 * 60 * 1000, xp: 10, gold: 5 },
-  medium: { cooldownMs: 45 * 60 * 1000, xp: 25, gold: 10 },
-  hard: { cooldownMs: 60 * 60 * 1000, xp: 50, gold: 20 },
-  veryHard: { cooldownMs: 120 * 60 * 1000, xp: 100, gold: 40 },
+  warmup: { xp: 20, gold: 20 },
+  hard1: { xp: 50, gold: 50 },
+  hard2: { xp: 75, gold: 75 },
+  impossible: { xp: 200, gold: 150 },
 } as const;
 
 type Difficulty = keyof typeof DIFF;
 
-// Görev kataloğu — istemcideki QUEST_CATALOG ile aynı id'ler.
-const CATALOG: Record<string, { type: 'auto' | 'manual'; difficulty: Difficulty }> = {
-  // BASİT (22)
-  q_auto_completions_3: { type: 'auto', difficulty: 'easy' },
-  q_auto_pomodoro_1: { type: 'auto', difficulty: 'easy' },
-  q_auto_gold_10: { type: 'auto', difficulty: 'easy' },
-  q_walk_10: { type: 'manual', difficulty: 'easy' },
-  q_stretch_2: { type: 'manual', difficulty: 'easy' },
-  q_water_1: { type: 'manual', difficulty: 'easy' },
-  q_sleep_8: { type: 'manual', difficulty: 'easy' },
-  q_fruit_1: { type: 'manual', difficulty: 'easy' },
-  q_veg_1: { type: 'manual', difficulty: 'easy' },
-  q_read_10: { type: 'manual', difficulty: 'easy' },
-  q_podcast_20: { type: 'manual', difficulty: 'easy' },
-  q_breath_5: { type: 'manual', difficulty: 'easy' },
-  q_journal_3: { type: 'manual', difficulty: 'easy' },
-  q_todo_1: { type: 'manual', difficulty: 'easy' },
-  q_inbox_5: { type: 'manual', difficulty: 'easy' },
-  q_bed_1: { type: 'manual', difficulty: 'easy' },
-  q_laundry_1: { type: 'manual', difficulty: 'easy' },
-  q_msg_1: { type: 'manual', difficulty: 'easy' },
-  q_hi_1: { type: 'manual', difficulty: 'easy' },
-  q_airplane_30: { type: 'manual', difficulty: 'easy' },
-  q_desk_1: { type: 'manual', difficulty: 'easy' },
-  q_expense_1: { type: 'manual', difficulty: 'easy' },
-  // ORTA (16)
-  q_auto_completions_5: { type: 'auto', difficulty: 'medium' },
-  q_auto_pomodoro_2: { type: 'auto', difficulty: 'medium' },
-  q_auto_gold_20: { type: 'auto', difficulty: 'medium' },
-  q_walk_30: { type: 'manual', difficulty: 'medium' },
-  q_home_workout_15: { type: 'manual', difficulty: 'medium' },
-  q_sit_1: { type: 'manual', difficulty: 'medium' },
-  q_water_1_5: { type: 'manual', difficulty: 'medium' },
-  q_cook_1: { type: 'manual', difficulty: 'medium' },
-  q_read_30: { type: 'manual', difficulty: 'medium' },
-  q_lesson_15: { type: 'manual', difficulty: 'medium' },
-  q_meditate_10: { type: 'manual', difficulty: 'medium' },
-  q_puzzle_1: { type: 'manual', difficulty: 'medium' },
-  q_deepwork_1: { type: 'manual', difficulty: 'medium' },
-  q_plan_tomorrow: { type: 'manual', difficulty: 'medium' },
-  q_clean_15: { type: 'manual', difficulty: 'medium' },
-  q_call_30: { type: 'manual', difficulty: 'medium' },
-  // ZOR (12)
-  q_auto_completions_8: { type: 'auto', difficulty: 'hard' },
-  q_auto_pomodoro_3: { type: 'auto', difficulty: 'hard' },
-  q_auto_gold_35: { type: 'auto', difficulty: 'hard' },
-  q_run_5k: { type: 'manual', difficulty: 'hard' },
-  q_processed_0: { type: 'manual', difficulty: 'hard' },
-  q_read_50: { type: 'manual', difficulty: 'hard' },
-  q_write_500: { type: 'manual', difficulty: 'hard' },
-  q_meditate_20: { type: 'manual', difficulty: 'hard' },
-  q_finish_project: { type: 'manual', difficulty: 'hard' },
-  q_deep_clean: { type: 'manual', difficulty: 'hard' },
-  q_meet_1: { type: 'manual', difficulty: 'hard' },
-  q_phone_off_2h: { type: 'manual', difficulty: 'hard' },
-  // ÇOK ZOR (10)
-  q_auto_completions_10: { type: 'auto', difficulty: 'veryHard' },
-  q_auto_pomodoro_4: { type: 'auto', difficulty: 'veryHard' },
-  q_auto_gold_50: { type: 'auto', difficulty: 'veryHard' },
-  q_run_10k: { type: 'manual', difficulty: 'veryHard' },
-  q_training_2h: { type: 'manual', difficulty: 'veryHard' },
-  q_course_1h: { type: 'manual', difficulty: 'veryHard' },
-  q_detox_1h: { type: 'manual', difficulty: 'veryHard' },
-  q_day_project: { type: 'manual', difficulty: 'veryHard' },
-  q_house_1: { type: 'manual', difficulty: 'veryHard' },
-  q_quality_time: { type: 'manual', difficulty: 'veryHard' },
+// Görev kataloğu — istemcideki DAILY_QUESTS / VIP_QUESTS ile aynı id'ler.
+const CATALOG: Record<string, { difficulty: Difficulty; vip: boolean }> = {
+  // Temel 4 görev
+  daily_warmup: { difficulty: 'warmup', vip: false },
+  daily_hard1: { difficulty: 'hard1', vip: false },
+  daily_hard2: { difficulty: 'hard2', vip: false },
+  daily_impossible: { difficulty: 'impossible', vip: false },
+  // VIP 4 görev
+  vip_warmup: { difficulty: 'warmup', vip: true },
+  vip_hard1: { difficulty: 'hard1', vip: true },
+  vip_hard2: { difficulty: 'hard2', vip: true },
+  vip_impossible: { difficulty: 'impossible', vip: true },
 };
 
-// Bir günde alınabilecek maksimum görev ödülü (spam koruması).
-const MAX_CLAIMS_PER_DAY = 12;
+// VIP ödül çarpanı: temel görevlerde ×1.5, 5'e yuvarlı.
+const VIP_MULTIPLIER = 1.5;
+
+function rewardFor(difficulty: Difficulty, isVip: boolean, isVipQuest: boolean) {
+  const base = DIFF[difficulty];
+  if (isVip && !isVipQuest) {
+    const round5 = (n: number) => Math.round((n * VIP_MULTIPLIER) / 5) * 5;
+    return { xp: round5(base.xp), gold: round5(base.gold) };
+  }
+  return { xp: base.xp, gold: base.gold };
+}
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
@@ -133,15 +92,14 @@ Deno.serve(async (req) => {
 
   const meta = CATALOG[questId];
   if (!meta) return json(req, 400, { error: 'invalid_quest' });
-  const diff = DIFF[meta.difficulty];
 
   const now = new Date();
   const today = utcDayKey(now);
 
-  // ---------- Profili getir ----------
+  // ---------- Profili getir (ban + VIP durumu sunucudan) ----------
   let { data: prof, error: profErr } = await supabase
     .from('profiles')
-    .select('username, banned, ban_reason')
+    .select('username, banned, ban_reason, vip_until')
     .eq('username', username)
     .maybeSingle();
 
@@ -162,34 +120,25 @@ Deno.serve(async (req) => {
     if (createErr) return json(req, 500, { error: 'profile_create_failed' });
   }
 
-  // ---------- Bekleme süresi (SUNUCU saati) ----------
+  // VIP bayrağı: sunucudaki vip_until geçerliyse aktif (istemciye güvenilmez).
+  const vipUntil = prof?.vip_until ? Date.parse(prof.vip_until) : NaN;
+  const isVip = !Number.isNaN(vipUntil) && vipUntil > now.getTime();
+
+  // VIP görevlerini yalnızca VIP kullanıcılar alabilir.
+  if (meta.vip && !isVip) {
+    return json(req, 403, { error: 'vip_required' });
+  }
+
+  // ---------- Günlük kontrol: bu görev bugün daha önce alındı mı? ----------
   const { data: lastClaim } = await supabase
     .from('quest_claims')
-    .select('claimed_at')
+    .select('day')
     .eq('username', username)
     .eq('quest_id', questId)
     .maybeSingle();
 
-  if (lastClaim?.claimed_at) {
-    const claimedAt = Date.parse(lastClaim.claimed_at);
-    if (!Number.isNaN(claimedAt)) {
-      const remainingMs = claimedAt + diff.cooldownMs - now.getTime();
-      if (remainingMs > 0) {
-        return json(req, 409, { error: 'cooldown', remainingMs });
-      }
-    }
-  }
-
-  // ---------- Günlük ödül limiti (SUNUCU günü) ----------
-  const { count, error: countErr } = await supabase
-    .from('quest_claims')
-    .select('quest_id', { count: 'exact', head: true })
-    .eq('username', username)
-    .eq('day', today);
-
-  if (countErr) return json(req, 500, { error: 'claim_count_failed' });
-  if ((count ?? 0) >= MAX_CLAIMS_PER_DAY) {
-    return json(req, 409, { error: 'daily_claim_limit' });
+  if (lastClaim?.day === today) {
+    return json(req, 409, { error: 'already_claimed_today' });
   }
 
   // ---------- Ödülü onayla: alımı kaydet ----------
@@ -199,9 +148,14 @@ Deno.serve(async (req) => {
   );
   if (writeErr) return json(req, 500, { error: 'claim_write_failed' });
 
+  // Onaylanan ödül miktarını istemciye döndür (istemci bu miktarı uygular).
+  const reward = rewardFor(meta.difficulty, isVip, meta.vip);
+
   return json(req, 200, {
     ok: true,
     claimedAt: now.toISOString(),
     day: today,
+    isVip,
+    reward,
   });
 });
