@@ -75,6 +75,16 @@ import {
 } from '../services/duelService';
 import { getLeaderboardData } from '../services/leaderboardService';
 import { claimQuestServer, getServerProfile, updateProfileData, updateProfileMeta } from '../services/profileService';
+import {
+  drainQueue,
+  enqueueMutation,
+  getQueue,
+  getQueueCount,
+  mergeEarnings,
+  mergeProfileMeta,
+  removeFromQueue,
+} from '../services/syncService';
+import { useSyncEngine } from '../hooks/useSyncEngine';
 import { purchaseVip } from '../services/vipService';
 import {
   cancelHourlyMotivation,
@@ -810,6 +820,28 @@ export function DataProvider({ children }) {
   // Not: updater fonksiyonunun içinde offsetToday() çağrılır, böylece gece yarısı
   // 1-2 saniyelik gecikme olsa bile dokunuş anındaki doğru gün yazılır.
   const toggleHabit = useCallback((id) => {
+    // Offline-First: tamamlamalar anında yerel veriye yazılır VE mutasyon
+    // kuyruğuna kaydedilir (bağlantı gelince sessizce sunucuya delta gider).
+    const h = dataRef.current.habits.find((x) => x.id === id);
+    const wasDone = !!(h && h.completedDates.includes(offsetToday()));
+    if (!wasDone) {
+      const username = authRef.current?.name || dataRef.current.settings.name || 'Kullanıcı';
+      enqueueMutation(
+        username,
+        {
+          action: 'UPDATE',
+          table: 'profiles',
+          payload: {
+            kind: 'earnings',
+            mergeKey: 'earnings',
+            deltaXp: dataRef.current.settings.xpPerHabit || 25,
+            deltaGold: GOLD_RATES.habit,
+            claimedDay: offsetToday(),
+          },
+        },
+        mergeEarnings
+      ).catch(() => {});
+    }
     setData((d) => {
       const today = offsetToday();
       const xp = d.settings.xpPerHabit;
@@ -1022,7 +1054,8 @@ export function DataProvider({ children }) {
   }, []);
 
   // Sunucudaki kendi profili oku: ban durumunu uygula + admin hediyelerini
-  // yerel envantere (ownedThemes/ownedAvatars/ownedFrames) birleştir.
+  // yerel envantere (ownedThemes/ownedAvatars/ownedFrames) birleştir +
+  // bio/profil fotoğrafını LWW kuralıyla yerel veriye yansıt.
   const refreshServerMeta = useCallback(async (name) => {
     const sp = await getServerProfile(name);
     if (!sp) return false;
@@ -1047,6 +1080,28 @@ export function DataProvider({ children }) {
         }
         return changed ? { ...d, ownedAvatars, ownedThemes, ownedFrames } : d;
       });
+    }
+    // Last-Write-Wins: sunucuda bio/fotoğraf varsa ve kullanıcının bekleyen
+    // yerel meta mutasyonu YOKSA sunucu değeri yerel veriye yazılır (başka
+    // cihazdan yapılan güncellemeler bu cihaza da yansır). Bekleyen mutasyon
+    // varsa yerel daha yeni kabul edilir (sunucu değeri ezilmez).
+    if (sp.bio !== null && sp.bio !== undefined || sp.photoUrl !== null && sp.photoUrl !== undefined) {
+      getQueue(name)
+        .then((queue) => {
+          const pendingMeta = queue.some((i) => i.table === 'profiles' && i.payload?.kind === 'meta');
+          if (pendingMeta) return; // yerel yazma bekliyor → yerel kazanır
+          const bioChanged = sp.bio !== null && sp.bio !== undefined;
+          const photoChanged = sp.photoUrl !== null && sp.photoUrl !== undefined;
+          if (bioChanged || photoChanged) {
+            setData((d) => {
+              const settings = { ...d.settings };
+              if (bioChanged) settings.bio = sp.bio;
+              if (photoChanged) settings.photoUrl = sp.photoUrl || null;
+              return { ...d, settings };
+            });
+          }
+        })
+        .catch(() => {});
     }
     setServer((s) => ({
       ...s,
@@ -1113,9 +1168,41 @@ export function DataProvider({ children }) {
     pushRef.current = true;
     // "refreshing" göstergesi: çek-yenile (pull-to-refresh) bu state'i okur.
     setServer((s) => ({ ...s, syncing: true }));
+    setSyncing(true);
     try {
       const snap = dataRef.current;
       const name = authRef.current?.name || snap.settings.name || 'Kullanıcı';
+
+      // 1) MUTATION QUEUE → sunucuya boşalt (sessiz, retry'li).
+      //    Kazanım item'ları tek delta çağrısıyla (syncAnchor tabanlı),
+      //    bio/fotoğraf item'ları tekil updateProfileMeta ile iletilir.
+      const bannedDuringDrain = await drainQueue(name, {
+        publishEarnings: async () => {
+          const published = await publishProfile(name, dataRef.current);
+          if (!published.ok && published.error === 'banned') {
+            await refreshServerMeta(name);
+          }
+          return !!published.ok;
+        },
+        applyMeta: async (item) => {
+          const p = item.payload || {};
+          const r = await updateProfileMeta(name, {
+            bio: p.bio !== undefined ? p.bio : null,
+            photoUrl: p.photoUrl !== undefined ? p.photoUrl : null,
+          });
+          if (!r.ok && r.error === 'banned') {
+            await refreshServerMeta(name);
+          }
+          return !!r.ok;
+        },
+      });
+      if (bannedDuringDrain) {
+        setServer((s) => ({ ...s, connected: true }));
+        return;
+      }
+
+      // 2) Kalan delta köprüsü: kuyrukta kazanım yoksa bile yerel/sunucu
+      //    farkı giderilir (eski sürümlerden gelen kullanıcılar için).
       const published = await publishProfile(name, snap);
       if (!published.ok) {
         // Yasak yanıtı: ban durumunu hemen uygula (uygulama yasak ekranı gösterir).
@@ -1142,17 +1229,21 @@ export function DataProvider({ children }) {
       }
       await refreshServerMeta(name);
       await pullServer();
-      setServer((s) => ({ ...s, connected: true }));
+      setServer((s) => ({ ...s, connected: true, lastSync: Date.now() }));
+      setLastSync(Date.now(), null);
       // Yerel veri sunucuya aktarıldı → "bekliyor" bayrağı temizlenir.
       // Senkron sırasında veri değiştiyse (referans farkı) beklemeye devam eder.
       if (dataRef.current === snap) setPendingSync(false);
+      setPending(await getQueueCount(name));
     } catch (e) {
       setServer((s) => ({ ...s, connected: false }));
+      setLastSync(null, e?.message || 'sync_failed');
     } finally {
       pushRef.current = false;
       setServer((s) => ({ ...s, syncing: false }));
+      setSyncing(false);
     }
-  }, [publishProfile, pullServer, refreshServerMeta]);
+  }, [publishProfile, pullServer, refreshServerMeta, setPending, setLastSync, setSyncing]);
 
   // Arkadaşlığı kaldırır (Supabase'de iki yönlü, kullanıcı adıyla).
   const removeFriend = useCallback(
@@ -1331,6 +1422,19 @@ export function DataProvider({ children }) {
     await runSync();
   }, [runSync]);
 
+  // ---------- Offline-First Sync Engine ----------
+  // NetInfo + AppState'i dinler; bağlantı geldiğinde / uygulama öne
+  // döndüğünde runSync'i SESSİZCE tetikler. UI asla bloklanmaz.
+  const { syncState, setPending, setSyncing, setLastSync } = useSyncEngine(refreshServer);
+
+  // Kuyruk boyutunu izle: veri her değiştiğinde bekleyen mutasyon sayısı
+  // güncellenir (SyncStatusChip "çevrimdışı · N değişiklik" gösterir).
+  useEffect(() => {
+    if (!loading && authStatus === 'in' && activeAccount) {
+      getQueueCount(activeAccount).then(setPending).catch(() => {});
+    }
+  }, [data, loading, authStatus, activeAccount, setPending]);
+
   // Günlük hatırlatma saatini ayarlar (0-23, null = kapalı).
   // Uygulama açıkken o saat geldiğinde ekran üstünden hatırlatma gösterilir.
   const setReminderHour = useCallback((hour) => {
@@ -1454,6 +1558,24 @@ export function DataProvider({ children }) {
     if (snap.pomodoro.state !== 'running' || snap.pomodoro.endAt - serverNow() > 0) return;
     const xp = snap.settings.pomodoroXp || 50;
     const gold = GOLD_RATES.pomodoro;
+    // Offline-First: pomodoro kaydı mutasyon kuyruğuna yazılır; sunucuya
+    // delta köprüsü üzerinden bağlantı gelince sessizce iletilir.
+    const username = authRef.current?.name || snap.settings.name || 'Kullanıcı';
+    enqueueMutation(
+      username,
+      {
+        action: 'CREATE',
+        table: 'pomodoro',
+        payload: {
+          kind: 'pomodoro_done',
+          xp,
+          gold,
+          at: serverNow(),
+          mergeKey: 'pomodoro_done',
+        },
+      },
+      mergeEarnings
+    ).catch(() => {});
     const today = offsetToday();
     // ANTI-FARM (Katman 1): pomodoro XP'si günlük tavana sayılır; tavanı
     // aşan kısım KUMBARADA birikir, ayrıca o gün bankadan 500'e kadar
@@ -1557,16 +1679,30 @@ export function DataProvider({ children }) {
   }, []);
 
   // ---------- Profil (bio + fotoğraf) ----------
-  // Bio ve profil fotoğrafı hem yerel veriye yazılır hem de sync-profile
-  // üzerinden sunucudaki profiles.bio / profiles.photo_url'ye iletilir
-  // (10 sn rate limit'e takılırsa bir sonraki meta güncellemede yazılır).
+  // Bio ve profil fotoğrafı hem yerel veriye yazılır hem de MUTASYON
+  // KUYRUĞUNA kaydedilir. Bağlantı varsa anında sunucuya iletilir;
+  // yoksa/rate-limit'e takılırsa item kuyrukta kalır ve arka plan
+  // senkronu bağlantı gelince retry'la gönderir (veri kaybı olmaz).
 
   const updateBio = useCallback((text) => {
     const bio = String(text || '').slice(0, 200);
     setData((d) => ({ ...d, settings: { ...d.settings, bio } }));
     const username = authRef.current?.name || activeAccount;
     if (username) {
-      updateProfileMeta(username, { bio }).catch(() => {});
+      (async () => {
+        const itemId = await enqueueMutation(
+          username,
+          {
+            action: 'UPDATE',
+            table: 'profiles',
+            payload: { kind: 'meta', bio, mergeKey: 'meta' },
+          },
+          mergeProfileMeta
+        );
+        // Bağlantı varsa hemen dene; başarısızsa kuyrukta kalır (retry).
+        const r = await updateProfileMeta(username, { bio });
+        if (r.ok && itemId) await removeFromQueue(username, [itemId]);
+      })().catch(() => {});
     }
   }, [activeAccount]);
 
@@ -1574,7 +1710,20 @@ export function DataProvider({ children }) {
     setData((d) => ({ ...d, settings: { ...d.settings, photoUrl: photoUrl || null } }));
     const username = authRef.current?.name || activeAccount;
     if (username) {
-      updateProfileMeta(username, { photoUrl: photoUrl || '' }).catch(() => {});
+      (async () => {
+        const itemId = await enqueueMutation(
+          username,
+          {
+            action: 'UPDATE',
+            table: 'profiles',
+            payload: { kind: 'meta', photoUrl: photoUrl || '', mergeKey: 'meta' },
+          },
+          mergeProfileMeta
+        );
+        // Bağlantı varsa hemen dene; başarısızsa kuyrukta kalır (retry).
+        const r = await updateProfileMeta(username, { photoUrl: photoUrl || '' });
+        if (r.ok && itemId) await removeFromQueue(username, [itemId]);
+      })().catch(() => {});
     }
   }, [activeAccount]);
 
@@ -2025,6 +2174,11 @@ export function DataProvider({ children }) {
       claimPassReward,
       vipActive,
       pendingSync,
+      // Offline-First Sync Engine durumu (useSyncEngine + mutation kuyruğu).
+      isOnline: syncState.isOnline,
+      pendingCount: syncState.pendingCount,
+      isSyncing: syncState.isSyncing,
+      lastSyncedAt: syncState.lastSyncedAt,
       leaderboardMinLevel: LEADERBOARD_MIN_LEVEL,
       leaderboardMinXp: LEADERBOARD_MIN_XP,
     }),
@@ -2077,6 +2231,7 @@ export function DataProvider({ children }) {
       claimPassReward,
       vipActive,
       pendingSync,
+      syncState,
     ]
   );
 

@@ -1,31 +1,37 @@
 // ============================================================
-// SyncStatusChip — "Senkronizasyon Bekliyor" göstergesi
-// Yerel veri sunucuya henüz aktarılmadıysa (pendingSync) başlık
-// çubuğunun köşesinde şık bir rozet durur; dokununca manuel
-// senkron tetiklenir. Senkron tamamlanınca rozet kaybolur.
+// SyncStatusChip — minimalist senkron durum indikatörü
+// Offline-First Sync Engine:
+// - Yalnızca mutation_queue'da bekleyen değişiklikler VARSA ve
+//   internete bağlanılamıyorsa köşede küçük bir rozet durur:
+//   "Çevrimdışı · N değişiklik bekliyor".
+// - Arka plan senkronu tamamlandığı an rozet SESSİZCE kaybolur
+//   (kullanıcıya "Senkronize Et" butonu dayatılmaz; tıklama
+//   yalnızca isteğe bağlı anında denemedir).
 // ============================================================
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useData } from '../context/DataContext';
 import { useTheme } from '../theme';
 
 export default function SyncStatusChip() {
-  const { pendingSync, refreshServer, server } = useData();
+  const { pendingCount, isOnline, isSyncing, refreshServer } = useData();
   const { colors: C } = useTheme();
-  // Bekleme yok ve çevrimdışı değil → gösterilecek bir şey yok.
-  if (!pendingSync && server.connected !== false) return null;
 
-  const syncing = server.syncing;
+  // Koşul: yalnızca bekleyen değişiklik VARSA göster (kuyruk boşsa gizle).
+  if (!pendingCount || pendingCount <= 0) return null;
+
+  const offline = isOnline === false;
+  const syncing = isSyncing;
 
   return (
     <Pressable
-      style={[styles.chip, { backgroundColor: syncing ? C.primary + '22' : C.danger + '18' }]}
+      style={[styles.chip, { backgroundColor: offline ? C.danger + '18' : C.gold + '1f' }]}
       onPress={() => refreshServer()}
       hitSlop={8}
     >
       {syncing ? (
         <Ionicons name="sync" size={13} color={C.primary} />
-      ) : server.connected === false ? (
+      ) : offline ? (
         <Ionicons name="cloud-offline-outline" size={13} color={C.danger} />
       ) : (
         <Ionicons name="cloud-upload-outline" size={13} color={C.gold} />
@@ -33,15 +39,15 @@ export default function SyncStatusChip() {
       <Text
         style={[
           styles.text,
-          { color: syncing ? C.primary : server.connected === false ? C.danger : C.gold },
+          { color: syncing ? C.primary : offline ? C.danger : C.gold },
         ]}
         numberOfLines={1}
       >
         {syncing
-          ? 'Senkronize ediliyor…'
-          : server.connected === false
-            ? 'Çevrimdışı'
-            : 'Senkronizasyon Bekliyor'}
+          ? `Eşitleniyor (${pendingCount})…`
+          : offline
+            ? `Çevrimdışı · ${pendingCount} değişiklik bekliyor`
+            : `${pendingCount} değişiklik eşitleniyor`}
       </Text>
     </Pressable>
   );
@@ -55,7 +61,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    maxWidth: 140,
+    maxWidth: 150,
   },
   text: {
     fontSize: 10,

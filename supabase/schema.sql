@@ -43,12 +43,16 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   recovery_hash  TEXT,
   bio            TEXT NOT NULL DEFAULT '',
   photo_url      TEXT,
-  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- Profil fotoğrafı ve bio (mevcut veritabanlarına eksik sütunlar eklenir).
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS bio TEXT NOT NULL DEFAULT '';
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS photo_url TEXT;
+-- Offline-First delta senkronu için değişiklik zaman damgası.
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+CREATE INDEX IF NOT EXISTS profiles_updated_at_idx ON public.profiles (updated_at);
 
 -- Kullanıcı profil fotoğrafları (public bucket + anon yazma — uygulama
 -- Supabase Auth kullanmaz, kimlik kullanıcı adıyla yürür).

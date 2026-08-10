@@ -185,6 +185,9 @@ Deno.serve(async (req) => {
     xp: newXp,
     coins: newGold,
     last_sync_at: now.toISOString(),
+    // Offline-First delta senkronu: istemciler yalnızca son senkrondan
+    // sonra GÜNCELLENMİŞ kayıtları çeker (updated_at > last_synced_at).
+    updated_at: now.toISOString(),
     ...(flagged
       ? {
           flagged: true,
