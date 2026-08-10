@@ -18,7 +18,7 @@ import NotificationBell from '../components/NotificationBell';
 import PomodoroTimer from '../components/PomodoroTimer';
 import XpBar from '../components/XpBar';
 import { useData } from '../context/DataContext';
-import { canClaimQuest, DAILY_QUESTS, questClaimedToday, VIP_QUESTS } from '../data/quests';
+import { canClaimQuest, getDailyQuests, questClaimedToday } from '../data/quests';
 import { DAILY_XP_CAP, levelFromTotalXp, MAX_ACTIVE_HABITS } from '../logic';
 import { useTheme } from '../theme';
 
@@ -34,16 +34,17 @@ export default function HomeScreen() {
   const [modalVisible, setModalVisible] = useState(false);
 
   // Görev özeti: bugün bitirilen görev sayısı + şu an ödülü hazır olanlar.
-  // Görevler günde bir kez alınır; gün anahtarı sunucu saatinden gelir.
+  // Görevler her gün havuzdan yeniden seçilir ve günde bir kez alınır.
   const questSummary = useMemo(() => {
     const claims = data.questClaims || {};
-    const all = [...DAILY_QUESTS, ...VIP_QUESTS];
+    const { base, vip } = getDailyQuests(today);
+    const all = [...base, ...vip];
     const doneToday = all.filter((q) => questClaimedToday(q, claims, today)).length;
     const readyCount = all.filter((q) =>
-      canClaimQuest(q, data.stats.day, claims, today)
+      canClaimQuest(q, data.stats.day, claims, today, data.habits)
     ).length;
     return { doneToday, readyCount, total: all.length };
-  }, [data.questClaims, data.stats.day, today]);
+  }, [data.questClaims, data.stats.day, data.habits, today]);
 
   // Bugünkü ilerleme: tamamlanan / toplam alışkanlık
   const doneToday = habits.filter((h) => h.completedDates.includes(today)).length;
@@ -71,6 +72,7 @@ export default function HomeScreen() {
           <AvatarCircle
             avatarId={data.settings.avatarId}
             frameId={data.settings.frameId}
+            photo={data.settings.photoUrl}
             size={48}
             ringColor={C.primary}
           />

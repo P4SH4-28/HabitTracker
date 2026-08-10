@@ -19,7 +19,7 @@ export async function getLeaderboardData(currentUsername) {
 
     const meRes = await supabase
       .from('profiles')
-      .select('id, username, xp, coins, flagged, flagged_reason')
+      .select('id, username, xp, coins, flagged, flagged_reason, avatar_id, frame_id, photo_url')
       .eq('username', currentUsername)
       .maybeSingle();
     if (meRes.error) throw meRes.error;
@@ -43,7 +43,7 @@ export async function getLeaderboardData(currentUsername) {
 
     const { data: profiles, error: pError } = await supabase
       .from('profiles')
-      .select('id, username, xp, coins, flagged, flagged_reason')
+      .select('id, username, xp, coins, flagged, flagged_reason, avatar_id, frame_id, photo_url')
       .in('id', ids)
       .eq('banned', false);
     if (pError) throw pError;
@@ -80,6 +80,9 @@ export async function getLeaderboardData(currentUsername) {
         xp7d: xp7dByUser[p.username] || 0,
         flagged: !!p.flagged,
         flaggedReason: p.flagged_reason || null,
+        avatarId: p.avatar_id || null,
+        frameId: p.frame_id || null,
+        photoUrl: p.photo_url || null,
       }))
       .sort((a, b) => b.xp - a.xp || b.coins - a.coins)
       .map((p, i) => ({ ...p, rank: i + 1 }));

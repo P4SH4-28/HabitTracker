@@ -74,6 +74,7 @@ export default function ChatTab() {
       username: me,
       name: me,
       avatarId: data.settings.avatarId || null,
+      avatarPhoto: data.settings.photoUrl || null,
       message,
     });
     setSending(false);
@@ -97,6 +98,7 @@ export default function ChatTab() {
         {!mine && (
           <AvatarCircle
             avatarId={item.avatar_id || 'av_fox'}
+            photo={item.avatar_photo || null}
             size={34}
           />
         )}

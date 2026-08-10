@@ -19,7 +19,12 @@ Alışkanlıklarını oyunlaştırarak takip et, XP kazan, seviye atla, görevle
 | ⚔️ **Arkadaş Düellosu** | 7 günlük XP yarışı: davet → kabul → canlı skor çubuğu → kazanan +100 XP / +50 🪙 |
 | 🍅 **Pomodoro** | Uygulama kapansa bile süre doğru işler; tamamlama ödülü |
 | 🎖️ **Başarımlar** | Kilidi açılan rozetler, bildirim tostları |
-| 🔔 **OS Bildirimleri** | Ayarlanan saatte uygulama KAPALIYKEN bile gerçek hatırlatma |
+| 🎒 **Envanter & Eşyalar** | Seri Dondurucu, Ceza Kalkanı, 2x XP Enerjisi — altınla alınır, etkileri sunucu gününe bağlı |
+| 🏅 **Haftalık Ligler** | 7 günlük XP'ye göre Bronz → Elmas, hafta sonu altın ödülü |
+| 👥 **Takımlar (Kulüpler)** | Takım kur/katıl, ortak 1000 XP haftalık hedefi, üye sıralaması |
+| 📷 **Profil** | Bio + profil fotoğrafı (Supabase Storage), AvatarCircle ile vitrin |
+| 🧩 **Android Widget** | Ana ekranda bugünün alışkanlıkları, seriler ve altın — canlı güncelleme |
+| 🔔 **OS Bildirimleri** | Ayarlanan saatte uygulama KAPALIYKEN bile gerçek hatırlatma + saatlik motivasyon |
 | 🔑 **Şifre kurtarma** | Kayıtta üretilen kurtarma anahtarıyla şifre sıfırlama (cihaz değişse bile) |
 | 👋 **İlk açılış rehberi** | Yeni kullanıcıya 3 sayfalık tanıtım |
 | 💾 **Yedek & Senkron** | Cihaz içi yedek + Supabase bulut senkronu (cihaz değişince devam et) |
@@ -85,16 +90,20 @@ için 4 GitHub secret'ı eklemen yeterli:
 
 ## 🗄️ Supabase Kurulumu
 
-1. `supabase-anti-farm.sql` → SQL Editor → **Run** (RLS sıkılaştırma + defter tablosu)
-2. `supabase-admin.sql` → SQL Editor → **Run** (yönetici sütunları + denetim günlüğü)
-3. `supabase-recovery.sql` → SQL Editor → **Run** (şifre kurtarma sütunu)
-4. `supabase-duel.sql` → SQL Editor → **Run** (arkadaş düellosu tablosu)
-5. Edge Functions'e şu fonksiyonları **Verify JWT KAPALI** olarak deploy et:
-   - `sync-profile` → `supabase/functions/sync-profile/index.ts`
-   - `admin-action` → `supabase/functions/admin-action/index.ts`
-   - `recovery-action` → `supabase/functions/recovery-action/index.ts` (şifre kurtarma)
-   - `duel-action` → `supabase/functions/duel-action/index.ts` (arkadaş düellosu)
-6. `src/config/supabase.js` içindeki proje URL + anon anahtarını kendi projenle değiştir
+1. `supabase/schema.sql` → SQL Editor → **Run** (tek parça şema: profil tabanı, günlük kazanç defteri, görev alımları, arkadaşlıklar, düellolar, sohbet, canlı pomodoro odaları, takımlar, RLS + realtime — idempotent)
+2. `supabase/functions/*` içindeki **7 Edge Function'ı Verify JWT KAPALI** olarak deploy et:
+
+| Fonksiyon | Dosya | Görevi |
+|---|---|---|
+| `sync-profile` | `supabase/functions/sync-profile/index.ts` | Delta senkron + günlük tavan (Katman 3) |
+| `sync-quest` | `supabase/functions/sync-quest/index.ts` | Günlük görev ödülü doğrulama |
+| `admin-action` | `supabase/functions/admin-action/index.ts` | Yönetici paneli (ban/ödül/hediye) |
+| `recovery-action` | `supabase/functions/recovery-action/index.ts` | Şifre kurtarma |
+| `duel-action` | `supabase/functions/duel-action/index.ts` | Arkadaş düellosu |
+| `chat-action` | `supabase/functions/chat-action/index.ts` | Sohbet + canlı pomodoro odaları |
+| `vip-action` | `supabase/functions/vip-action/index.ts` | Season Pass VIP satın alma |
+
+3. `src/config/supabase.js` içindeki proje URL + anon anahtarını kendi projenle değiştir
 
 > ⚠️ `src/config/admin.js`'deki `ADMIN_KEY`, `admin-action` fonksiyonundaki anahtarla aynı olmalı.
 
@@ -123,11 +132,10 @@ Edge function karar mantıkları (tavan, saat koruması, ban, hediye) yerel sim�
 │   ├── logic.js                # XP/seviye matematiği, tavan sabitleri
 │   └── theme.js                # 13 tema tanımı
 ├── supabase/
-│   └── functions/              # sync-profile + admin-action + recovery-action + duel-action
-├── supabase-anti-farm.sql      # Katman 3-4 şeması
-├── supabase-admin.sql          # Katman 5 şeması
-├── supabase-recovery.sql       # Şifre kurtarma sütunu
-├── supabase-duel.sql           # Arkadaş düellosu tablosu
+│   ├── schema.sql                # TEK PARÇA şema (tüm tablolar + RLS + realtime)
+│   └── functions/                # 7 edge function: sync-profile, sync-quest,
+│                                 # admin-action, recovery-action, duel-action,
+│                                 # chat-action, vip-action
 ├── docs/playstore-yayin.md     # Play Store yayın rehberi
 └── .github/workflows/build-apk.yml
 ```

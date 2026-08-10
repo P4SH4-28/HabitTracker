@@ -2,7 +2,7 @@
   "expo": {
     "name": "HabitTracker",
     "slug": "HabitTracker",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -34,6 +34,25 @@
         {
           "icon": "./assets/android-icon-monochrome.png",
           "color": "#7C5CFF"
+        }
+      ],
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "HabitTracker",
+              "label": "Habit Tracker",
+              "description": "Bugünün alışkanlıkları ve seriler",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "previewImage": "./assets/icon.png",
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            }
+          ]
         }
       ]
     ]

@@ -18,6 +18,10 @@ import { useTheme } from '../theme';
 const MENU_ITEMS = [
   { key: 'QuestBoard', icon: 'flag', label: 'Günün Görevleri', desc: 'Günlük 4+4 görev' },
   { key: 'SeasonPass', icon: 'ticket', label: 'Season Pass', desc: 'Seviye ödülleri ve VIP' },
+  { key: 'Inventory', icon: 'cube', label: 'Envanter', desc: 'Eşyalarını kullan' },
+  { key: 'Achievements', icon: 'trophy', label: 'Başarımlar', desc: 'Kupa ve ödüller' },
+  { key: 'League', icon: 'podium', label: 'Haftalık Ligler', desc: 'Lig rütben ve ödül' },
+  { key: 'Team', icon: 'people', label: 'Takımım', desc: 'Kulüp kur veya katıl' },
   { key: 'Settings', icon: 'settings', label: 'Ayarlar', desc: 'Profil, yedek ve tercihler' },
 ];
 
@@ -56,6 +60,7 @@ export default function AppMenu() {
             <AvatarCircle
               avatarId={data.settings.avatarId}
               frameId={data.settings.frameId}
+              photo={data.settings.photoUrl}
               size={52}
               ringColor={C.primary}
             />

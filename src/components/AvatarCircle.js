@@ -1,14 +1,15 @@
 // ============================================================
-// AvatarCircle — Daire şeklinde emoji avatar (profil fotoğrafı)
-// Emoji tabanlıdır; "emoji" verilirse doğrudan, verilmezse
-// "avatarId" ile dükkan ürününe bakıp emojiyi bulur.
-// "frameId" verilirse avatarın etrafına dükkan çerçevesinin
-// emojilerinden oluşan bir halka sarılır (FrameDecor). Çerçeve
-// Lottie animasyonluysa (Season Pass VIP çerçeveleri) avatarın
-// arkasında dönen animasyon (LottieView) oynatılır.
+// AvatarCircle — Daire şeklinde profil fotoğrafı
+// - "photo" verilirse (kullanıcının yüklediği fotoğraf) Image gösterir;
+//   yoksa emoji avatar'a düşer (dükkan ürünü ya da doğrudan emoji).
+// - "frameId" verilirse avatarın etrafına çerçeve sarılır:
+//   * Lottie çerçeveler (VIP): avatarın arkasında dönen animasyon.
+//   * Emoji halkalı çerçeveler: halka YAVAŞÇA döner (boyut >= 44 ise,
+//     küçük gösterimlerde performans için statik kalır).
+// - Çerçeve varsa avatarın arkasına yumuşak bir ışıltı (glow) eklenir.
 // ============================================================
-import { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, Image, StyleSheet, Text, View } from 'react-native';
 import LottieView from 'lottie-react-native';
 import { getAvatarEmoji, getFrame } from '../data/shop';
 import { useTheme } from '../theme';
@@ -58,8 +59,24 @@ export function LottieFrame({ frame, size, style, children }) {
 }
 
 // Çerçeve halkası: verilen emojiyi avatarın çevresinde 8 noktada gösterir.
-// Her avatar boyutuna ölçeklenir; çocuk öğe (avatar) ortada kalır.
-export function FrameDecor({ ring = '⭐', size = 64, style, children }) {
+// "animated" ise halka avatarın etrafında yavaşça döner (native driver).
+export function FrameDecor({ ring = '⭐', size = 64, style, children, animated = false }) {
+  const rotate = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!animated) return;
+    const loop = Animated.loop(
+      Animated.timing(rotate, {
+        toValue: 1,
+        duration: 24000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [animated, rotate]);
+
   const dots = [];
   const radius = size * 0.52;
   const dotSize = size * 0.2;
@@ -79,6 +96,29 @@ export function FrameDecor({ ring = '⭐', size = 64, style, children }) {
       </Text>
     );
   }
+
+  const ringView = animated ? (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        width: size,
+        height: size,
+        transform: [
+          {
+            rotate: rotate.interpolate({
+              inputRange: [0, 1],
+              outputRange: ['0deg', '360deg'],
+            }),
+          },
+        ],
+      }}
+    >
+      {dots}
+    </Animated.View>
+  ) : (
+    <View style={{ position: 'absolute', width: size, height: size }}>{dots}</View>
+  );
+
   return (
     <View
       style={[
@@ -91,17 +131,35 @@ export function FrameDecor({ ring = '⭐', size = 64, style, children }) {
         style,
       ]}
     >
-      {dots}
+      {ringView}
       {children}
     </View>
   );
 }
 
-export default function AvatarCircle({ avatarId, emoji, frameId, size = 44, ringColor, style }) {
+export default function AvatarCircle({ avatarId, emoji, frameId, photo, size = 44, ringColor, style }) {
   const { colors: C } = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
+  const [photoFailed, setPhotoFailed] = useState(false);
   const resolved = emoji || (avatarId ? getAvatarEmoji(avatarId) : '😀');
   const frame = frameId ? getFrame(frameId) : null;
+  // Küçük gösterimlerde dönen halka performans için kapatılır.
+  const ringAnimated = size >= 44;
+
+  const circleInner = photo && !photoFailed ? (
+    <Image
+      source={{ uri: photo }}
+      style={{
+        width: size - (frame ? 8 : 4),
+        height: size - (frame ? 8 : 4),
+        borderRadius: size / 2,
+      }}
+      onError={() => setPhotoFailed(true)}
+    />
+  ) : (
+    <Text style={{ fontSize: size * 0.48 }}>{resolved}</Text>
+  );
+
   const circle = (
     <View
       style={[
@@ -115,21 +173,47 @@ export default function AvatarCircle({ avatarId, emoji, frameId, size = 44, ring
         !frame && style,
       ]}
     >
-      <Text style={{ fontSize: size * 0.48 }}>{resolved}</Text>
+      {circleInner}
     </View>
   );
+
   if (!frame) return circle;
-  // Lottie çerçeve: animasyon avatarın arkasında oynar.
+
+  // Çerçeve varsa arkasına yumuşak ışıltı (glow) eklenir.
+  const glowColor = frame.color || C.primary;
+  const framed = (
+    <View
+      style={[
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          boxShadow: [
+            {
+              offsetX: 0,
+              offsetY: 0,
+              blurRadius: size * 0.35,
+              color: glowColor + '59',
+            },
+          ],
+        },
+        style,
+      ]}
+    >
+      {circle}
+    </View>
+  );
+
   if (frame.lottie) {
     return (
       <LottieFrame frame={frame} size={size} style={style}>
-        {circle}
+        {framed}
       </LottieFrame>
     );
   }
   return (
-    <FrameDecor ring={frame.emoji} size={size} style={style}>
-      {circle}
+    <FrameDecor ring={frame.emoji} size={size} style={style} animated={ringAnimated}>
+      {framed}
     </FrameDecor>
   );
 }
@@ -140,6 +224,7 @@ function makeStyles(C) {
       backgroundColor: C.surfaceLight,
       alignItems: 'center',
       justifyContent: 'center',
+      overflow: 'hidden',
     },
   });
 }

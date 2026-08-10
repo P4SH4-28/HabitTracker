@@ -61,18 +61,22 @@ export function dayNameShort(date) {
 }
 
 // Bir alışkanlığın günlük seri (streak) sayısını hesaplar.
-// Kural: dün veya bugün tamamlanmadıysa seri 0'dır; ardışık günler
+// Kural: dün veya bugün GERÇEKTEN tamamlanmadıysa seri 0'dır (dondurma
+// yeni seri BAŞLATMAZ, yalnızca mevcut zinciri korur); ardışık günler
 // geriye doğru sayılarak seri bulunur.
-export function calcStreak(completedDates, today) {
+// Opsiyonel "freezeDay" (gün anahtarı): "Seri Dondurucu" eşyasıyla
+// korunan gün; o gün tamamlanmamış olsa bile zincirde sayılır.
+export function calcStreak(completedDates, today, freezeDay = null) {
   const set = new Set(completedDates);
+  const isDone = (key) => set.has(key) || key === freezeDay;
   const todayDate = parseKey(today);
   const yesterday = new Date(todayDate);
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayKey = dateKey(yesterday);
   if (!set.has(today) && !set.has(yesterdayKey)) return 0;
   let streak = 0;
-  let d = set.has(today) ? todayDate : yesterday;
-  while (set.has(dateKey(d))) {
+  let d = isDone(today) ? todayDate : yesterday;
+  while (isDone(dateKey(d))) {
     streak += 1;
     d.setDate(d.getDate() - 1);
   }
@@ -215,9 +219,17 @@ export const XP_BANK_DAILY_RELEASE = 500;
 export const XP_BANK_MAX = 5000;
 
 // Günlük sayaç şablonu: yeni güne geçince tüm sayaçlar sıfırlanır.
-// day = { key, completions, pomodoro, goldEarned, xpEarned, bankReleased }.
+// day = { key, completions, pomodoro, focusMinutes, goldEarned, xpEarned, bankReleased }.
 export function emptyDayCounter(key) {
-  return { key, completions: 0, pomodoro: 0, goldEarned: 0, xpEarned: 0, bankReleased: 0 };
+  return {
+    key,
+    completions: 0,
+    pomodoro: 0,
+    focusMinutes: 0,
+    goldEarned: 0,
+    xpEarned: 0,
+    bankReleased: 0,
+  };
 }
 
 // Bir XP kazancına kumbara kuralını uygular (SAF fonksiyon).

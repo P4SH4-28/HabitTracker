@@ -10,6 +10,7 @@
 import { useMemo } from 'react';
 import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { calcStreak } from '../logic';
+import { useData } from '../context/DataContext';
 import { useTheme } from '../theme';
 
 // Silme onayı: mobilde doğal Alert, web'de tarayıcının confirm kutusu kullanılır.
@@ -27,8 +28,11 @@ export function confirmDialog(title, message, onOk) {
 export default function HabitCard({ habit, today, onToggle, onDelete }) {
   const { colors: C } = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
+  // Seri Dondurucu aktifken bugünün serisi korunur (kartta ❄️ ile gösterilir).
+  const freezeDay = useData().data.activeEffects?.streakFreeze || null;
   const completedToday = habit.completedDates.includes(today);
-  const streak = calcStreak(habit.completedDates, today);
+  const frozen = !!freezeDay && !completedToday;
+  const streak = calcStreak(habit.completedDates, today, freezeDay);
 
   return (
     <Pressable
@@ -68,9 +72,9 @@ export default function HabitCard({ habit, today, onToggle, onDelete }) {
         </Text>
       </View>
 
-      {/* 🔥 Seri sayacı */}
+      {/* 🔥 Seri sayacı (dondurulmuşsa ❄️) */}
       <View style={[styles.streakBadge, { borderColor: habit.color }]}>
-        <Text style={styles.streakIcon}>🔥</Text>
+        <Text style={styles.streakIcon}>{frozen ? '❄️' : '🔥'}</Text>
         <Text style={styles.streakText}>{streak}</Text>
       </View>
     </Pressable>

@@ -6,11 +6,15 @@
 // ============================================================
 import { useEffect, useRef } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useData } from '../context/DataContext';
 
 export default function AchievementToast() {
   const { toasts, dismissToast } = useData();
   const toast = toasts[0];
+  // Çentik/status bar altında görünür (üstten gelen bildirim kameraya takılmaz).
+  const insets = useSafeAreaInsets();
+  const topPad = insets.top + 8;
 
   // Yukarıdan kayarak gelme animasyonu.
   const translateY = useRef(new Animated.Value(-120)).current;
@@ -34,7 +38,7 @@ export default function AchievementToast() {
   if (!toast) return null;
 
   return (
-    <View style={styles.wrap} pointerEvents="box-none">
+    <View style={[styles.wrap, { paddingTop: topPad }]} pointerEvents="box-none">
       <Pressable
         onPress={() => dismissToast(toast.key)}
         style={({ pressed }) => pressed && styles.pressed}
@@ -60,7 +64,6 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 999,
     alignItems: 'center',
-    paddingTop: 8,
   },
   toast: {
     flexDirection: 'row',

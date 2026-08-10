@@ -1,6 +1,6 @@
 // ============================================================
 // SettingsScreen — "Ayarlar" sekmesi
-// Bölümler: Profil (hesap + çıkış), Oyunlaştırma (XP + ceza),
+// Bölümler: Profil, Bildirimler, Görünüm, Sunucu, Veri, Hakkında.
 // Bildirimler (hatırlatma saati), Görünüm, Veri (yedek/sıfırla), Hakkında.
 // ============================================================
 import { useMemo, useState, useEffect } from 'react';
@@ -24,6 +24,7 @@ import { useData } from '../context/DataContext';
 import { getShopItem } from '../data/shop';
 import {
   cancelDailyReminder,
+  cancelHourlyMotivation,
   ensureNotificationPermission,
   scheduleDailyReminder,
 } from '../services/notifications';
@@ -118,9 +119,9 @@ function EditSheet({ visible, title, fields, buttonLabel, onSubmit, onClose }) {
 export default function SettingsScreen() {
   const {
     data,
-    setPenaltyEnabled,
     setReminderHour,
     setOsNotify,
+    setHourlyNotify,
     backupData,
     restoreData,
     backupTs,
@@ -132,9 +133,9 @@ export default function SettingsScreen() {
   const styles = useMemo(() => makeStyles(C), [C]);
   const navigation = useNavigation();
 
-  const penaltyEnabled = data.settings.penaltyEnabled !== false;
   const reminderHour = data.settings.reminderHour;
   const osNotify = !!data.settings.osNotify;
+  const hourlyNotify = !!data.settings.hourlyNotify;
 
   // OS bildirimi açıkken saat değiştirilirse plan yenilenir.
   useEffect(() => {
@@ -161,6 +162,21 @@ export default function SettingsScreen() {
     } else {
       await cancelDailyReminder();
       setOsNotify(false);
+    }
+  };
+  // "Saatlik motivasyon" anahtarı: izin iste + aç/kapat.
+  // Planlama (görev durumuna göre metin seçimi) DataContext'te yapılır.
+  const toggleHourlyNotify = async (value) => {
+    if (value) {
+      const granted = await ensureNotificationPermission();
+      if (!granted) {
+        notify('Bildirim izni gerekli', 'Saatlik motivasyon için bildirim iznini vermelisin.');
+        return;
+      }
+      setHourlyNotify(true);
+    } else {
+      await cancelHourlyMotivation();
+      setHourlyNotify(false);
     }
   };
   const currentTheme = getTheme(data.settings.themeId || 'dark');
@@ -222,6 +238,7 @@ export default function SettingsScreen() {
           <AvatarCircle
             avatarId={data.settings.avatarId}
             frameId={data.settings.frameId}
+            photo={data.settings.photoUrl}
             size={72}
             ringColor={C.gold}
           />
@@ -260,26 +277,6 @@ export default function SettingsScreen() {
             >
               <Text style={styles.dangerText}>Çıkış</Text>
             </Pressable>
-          }
-        />
-      </Section>
-
-      {/* Oyun Kuralları */}
-      <Section title="Oyun Kuralları">
-        <SettingRow
-          label="Eksik görev cezası"
-          description={
-            penaltyEnabled
-              ? 'Gün sonunda tamamlanmayan her görev için 15 🪙 kesilir (0 altına inmez)'
-              : 'Gün sonunda eksik görevler için altın kesilmez'
-          }
-          right={
-            <Switch
-              value={penaltyEnabled}
-              onValueChange={setPenaltyEnabled}
-              trackColor={{ true: C.primary, false: C.surfaceLight }}
-              thumbColor={penaltyEnabled ? C.onPrimary : C.textMuted}
-            />
           }
         />
       </Section>
@@ -330,6 +327,22 @@ export default function SettingsScreen() {
               onValueChange={toggleOsNotify}
               trackColor={{ true: C.primary, false: C.surfaceLight }}
               thumbColor={osNotify ? C.onPrimary : C.textMuted}
+            />
+          }
+        />
+        <SettingRow
+          label="Bildirim"
+          description={
+            hourlyNotify
+              ? 'Her saat başı görev durumuna göre bildirim gönderilir (bekleyen görev → hatırlatma, yoksa → sürdürme)'
+              : 'Kapalı — açınca her saat başı bildirim gelir'
+          }
+          right={
+            <Switch
+              value={hourlyNotify}
+              onValueChange={toggleHourlyNotify}
+              trackColor={{ true: C.primary, false: C.surfaceLight }}
+              thumbColor={hourlyNotify ? C.onPrimary : C.textMuted}
             />
           }
         />

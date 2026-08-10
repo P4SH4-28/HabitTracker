@@ -122,6 +122,7 @@ export default function FriendsScreen() {
                 avatarId={item.avatarId}
                 emoji={item.avatarId ? undefined : item.emoji}
                 frameId={item.frameId}
+                photo={item.photoUrl}
                 size={44}
               />
               <View style={styles.info}>

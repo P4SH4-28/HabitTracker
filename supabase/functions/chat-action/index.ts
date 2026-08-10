@@ -67,6 +67,10 @@ Deno.serve(async (req) => {
     }
     const name = typeof body?.name === 'string' ? body.name.slice(0, 30) : username;
     const avatarId = typeof body?.avatarId === 'string' ? body.avatarId.slice(0, 40) : null;
+    const avatarPhoto =
+      typeof body?.avatarPhoto === 'string' && body.avatarPhoto.trim().length > 0
+        ? body.avatarPhoto.trim().slice(0, 300)
+        : null;
 
     // Spam koruması: son mesajdan bu yana SPAM_MS geçmediyse reddet.
     const { data: last } = await supabase
@@ -85,8 +89,8 @@ Deno.serve(async (req) => {
 
     const { data, error } = await supabase
       .from('chat_messages')
-      .insert({ username, name, avatar_id: avatarId, message, created_at: now.toISOString() })
-      .select('id, username, name, avatar_id, message, created_at')
+      .insert({ username, name, avatar_id: avatarId, avatar_photo: avatarPhoto, message, created_at: now.toISOString() })
+      .select('id, username, name, avatar_id, avatar_photo, message, created_at')
       .single();
     if (error) return json(req, 500, { error: 'send_failed' });
 
@@ -161,14 +165,12 @@ Deno.serve(async (req) => {
       .update({ participants: count ?? 1, last_active_at: now.toISOString() })
       .eq('id', roomId);
     if (touchErr) return json(req, 500, { error: 'join_failed' });
-    const { data: room } = await supabase
+    const { data: roomFull } = await supabase
       .from('pomodoro_rooms')
       .select('id, name, host, participants, created_at, last_active_at')
       .eq('id', roomId)
       .single();
-    return json(req, 200, { ok: true, room: room || null });
-    }
-    return json(req, 200, { ok: true, already: true });
+    return json(req, 200, { ok: true, room: roomFull || null });
   }
 
   // ---------------- room_leave: odadan ayrıl ----------------

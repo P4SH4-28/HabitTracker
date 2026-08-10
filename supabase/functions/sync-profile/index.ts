@@ -62,6 +62,15 @@ Deno.serve(async (req) => {
   }
   const claimedDay = typeof body?.claimedDay === 'string' ? body.claimedDay : null;
 
+  // Profil meta bilgisi (isteğe bağlı; yalnızca verilirse yazılır).
+  const bio = typeof body?.bio === 'string' ? body.bio.trim().slice(0, 200) : null;
+  const photoUrl =
+    typeof body?.photoUrl === 'string' && body.photoUrl.trim().length > 0
+      ? body.photoUrl.trim().slice(0, 300)
+      : typeof body?.photoUrl === 'string'
+        ? ''
+        : null;
+
   const now = new Date();
   const serverDay = utcDayKey(now);
 
@@ -172,21 +181,24 @@ Deno.serve(async (req) => {
 
   // Katman 4: tavan aşımı tespiti → profil bayraklanır (liderlikte ⚠️).
   const flagged = clamped || clockAhead;
+  const updateFields = {
+    xp: newXp,
+    coins: newGold,
+    last_sync_at: now.toISOString(),
+    ...(flagged
+      ? {
+          flagged: true,
+          flagged_reason: clockAhead
+            ? `clock_ahead (claimed ${claimedDay})`
+            : `daily_cap_clamped (${day})`,
+        }
+      : {}),
+  };
+  if (bio !== null) updateFields.bio = bio;
+  if (photoUrl !== null) updateFields.photo_url = photoUrl || null;
   const { error: profUpdErr } = await supabase
     .from('profiles')
-    .update({
-      xp: newXp,
-      coins: newGold,
-      last_sync_at: now.toISOString(),
-      ...(flagged
-        ? {
-            flagged: true,
-            flagged_reason: clockAhead
-              ? `clock_ahead (claimed ${claimedDay})`
-              : `daily_cap_clamped (${day})`,
-          }
-        : {}),
-    })
+    .update(updateFields)
     .eq('username', username);
   if (profUpdErr) return json(req, 500, { error: 'profile_update_failed' });
 

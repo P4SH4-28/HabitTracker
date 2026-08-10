@@ -47,7 +47,7 @@ export async function fetchChatHistory(limit = 50) {
   try {
     const { data, error } = await supabase
       .from('chat_messages')
-      .select('id, username, name, avatar_id, message, created_at')
+      .select('id, username, name, avatar_id, avatar_photo, message, created_at')
       .order('created_at', { ascending: false })
       .limit(limit);
     if (error) return { ok: false, error: error.message };
@@ -58,8 +58,8 @@ export async function fetchChatHistory(limit = 50) {
 }
 
 // Mesaj gönderir (uzunluk + spam koruması sunucuda).
-export function sendChatMessage({ username, name, avatarId, message }) {
-  return post({ action: 'send', username, name, avatarId, message });
+export function sendChatMessage({ username, name, avatarId, avatarPhoto, message }) {
+  return post({ action: 'send', username, name, avatarId, avatarPhoto, message });
 }
 
 // Yeni mesajları dinler. Dönüş: unsubscribe fonksiyonu.

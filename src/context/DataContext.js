@@ -31,19 +31,23 @@ import {
 import { isClockFresh, isClockTampered, loadServerClock, serverNow } from '../services/serverClock';
 import { evaluateAchievements } from '../data/achievements';
 import {
+  ALL_QUEST_IDS,
   bumpDay,
   canClaimQuest,
-  DAILY_QUESTS,
+  getDailyQuests,
   getQuest,
+  POMODORO_MINUTES,
   questClaimedToday,
+  questMetricValue,
   questProgress,
   questReward,
   QUEST_DIFFICULTIES,
   VIP_DURATION_MS,
   VIP_PRICE_GOLD,
-  VIP_QUESTS,
 } from '../data/quests';
 import { getPassLevel, PASS_MAX_LEVEL, passRewardClaimed } from '../data/seasonPass';
+import { emptyActiveEffects, emptyInventory, getItem, XP_BOOST_USES } from '../data/items';
+import { getLeague, weekKeyFor } from '../data/leagues';
 import {
   FREE_AVATARS,
   FREE_FRAMES,
@@ -52,6 +56,7 @@ import {
   GOLD_RATES,
 } from '../data/shop';
 import { COLORS, getTheme } from '../theme';
+import { refreshAndroidWidget } from '../services/widgetService';
 import { useAuth } from './AuthContext';
 import {
   acceptFriendRequest,
@@ -69,8 +74,12 @@ import {
   getMyDuels,
 } from '../services/duelService';
 import { getLeaderboardData } from '../services/leaderboardService';
-import { claimQuestServer, getServerProfile, updateProfileData } from '../services/profileService';
+import { claimQuestServer, getServerProfile, updateProfileData, updateProfileMeta } from '../services/profileService';
 import { purchaseVip } from '../services/vipService';
+import {
+  cancelHourlyMotivation,
+  scheduleHourlyMotivation,
+} from '../services/notifications';
 
 // Depolama anahtarları HESABA ÖZELDİR: her hesabın verisi kendi anahtarında
 // saklanır; hesap değişince veri de değişir. "name" önce güvenli hale getirilir
@@ -120,7 +129,7 @@ const INITIAL_STATE = {
     // XP KUMBARASI: günlük tavanı aşan XP burada birikir, günde 500'e kadar geri verilir.
     xpBank: 0,
   },
-    settings: { xpPerHabit: 25, pomodoroXp: 50, avatarId: 'av_fox', themeId: 'dark', devOffset: 0, frameId: null, penaltyEnabled: true, reminderHour: null, osNotify: false, vipUntil: 0 },
+    settings: { xpPerHabit: 25, pomodoroXp: 50, avatarId: 'av_fox', themeId: 'dark', devOffset: 0, frameId: null, reminderHour: null, osNotify: false, hourlyNotify: false, vipUntil: 0, bio: '', photoUrl: null },
   friends: [],
   players: [],
   // Açılmış başarımların id listesi (AsyncStorage'a otomatik kaydedilir).
@@ -142,6 +151,13 @@ const INITIAL_STATE = {
   // Pomodoro oturumu. state: idle (boşta) | running (çalışıyor) | paused (duraklatıldı).
   // "endAt" süre bitiş anıdır; böylece uygulama kapansa bile süre doğru işler.
   pomodoro: { state: 'idle', endAt: 0, remainingMs: POMODORO_DURATION_MS },
+  // Envanter: satın alınan eşya adetleri (id → adet). Dükkan'dan alınır,
+  // Envanter ekranında kullanılır (bkz. items.js).
+  inventory: emptyInventory(),
+  // Aktif eşya etkileri (bkz. items.js):
+  // streakFreeze: serinin korunduğu gün anahtarı, penaltyShield: cezanın
+  // kesilmediği gün anahtarı, xpBoost: kalan 2x XP tamamlama hakkı.
+  activeEffects: emptyActiveEffects(),
 };
 
 // Liderlik tablosunun açılma seviyesi ve o seviye için gereken kümülatif XP.
@@ -160,6 +176,7 @@ function profileToPlayer(p) {
     lastActive: p.lastActive ? dateKey(new Date(p.lastActive)) : null,
     avatarId: p.avatarId || null,
     frameId: p.frameId || null,
+    photoUrl: p.photoUrl || null,
     // Katman 4: şüpheli kullanıcı bayrağı + 7 günlük XP trendi.
     flagged: !!p.flagged,
     flaggedReason: p.flaggedReason || p.flagged_reason || null,
@@ -402,15 +419,15 @@ export function DataProvider({ children }) {
               ownedBadges: Array.isArray(parsed.ownedBadges)
                 ? parsed.ownedBadges
                 : [],
-              // Yeni nesil görev sistemi: yalnızca bilinen görev id'leri yüklenir
-              // (eski 60 görevlik katalog kayıtları atılır).
+              // Yeni nesil görev sistemi: yalnızca HAVUZDAKİ görev id'leri
+              // yüklenir (eski 60 görevlik katalog kayıtları atılır).
               questClaims:
                 parsed.questClaims &&
                 typeof parsed.questClaims === 'object' &&
                 !Array.isArray(parsed.questClaims)
                   ? Object.fromEntries(
                       Object.entries(parsed.questClaims).filter(([id]) =>
-                        [...DAILY_QUESTS, ...VIP_QUESTS].some((q) => q.id === id)
+                        ALL_QUEST_IDS.includes(id)
                       )
                     )
                   : {},
@@ -421,6 +438,24 @@ export function DataProvider({ children }) {
                   ? parsed.passClaims
                   : {},
               pomodoro: { ...INITIAL_STATE.pomodoro, ...(parsed.pomodoro || {}) },
+              // Eşya envanteri + aktif etkiler: eski kayıtlarda yoktur,
+              // varsayılanla birleştirilir.
+              inventory: {
+                ...INITIAL_STATE.inventory,
+                ...(parsed.inventory && typeof parsed.inventory === 'object'
+                  ? parsed.inventory
+                  : {}),
+              },
+              activeEffects: {
+                ...INITIAL_STATE.activeEffects,
+                ...(parsed.activeEffects && typeof parsed.activeEffects === 'object'
+                  ? parsed.activeEffects
+                  : {}),
+                xpBoost: {
+                  usesLeft:
+                    parsed.activeEffects?.xpBoost?.usesLeft ?? INITIAL_STATE.activeEffects.xpBoost.usesLeft,
+                },
+              },
             });
           }
         }
@@ -489,12 +524,72 @@ export function DataProvider({ children }) {
   // ---------- Yardımcılar (test günü kaymasını hesaba katar) ----------
 
   // Eksik görev cezası: "forDay" gününde tamamlanmayan her görev için
-  // PENALTY_COINS altın kesilir (bakiye 0'ın altına inmez). Ayarlardan
-  // kapatılabilir (settings.penaltyEnabled).
+  // PENALTY_COINS altın kesilir (bakiye 0'ın altına inmez). Her zaman
+  // uygulanır — kapatılamaz. "Ceza Kalkanı" eşyası o günü koruyorsa
+  // kesinti yapılmaz ve kalkan tüketilir; o gün eksik yoksa kalkan
+  // envantere geri konur (boşa gitmez).
   const applyPenaltyFor = useCallback(
     (forDay) => {
-      if (!forDay || !data.settings.penaltyEnabled) return;
+      if (!forDay) return;
       const p = dayPenalty(data.habits, forDay, PENALTY_COINS);
+      const shield = data.activeEffects?.penaltyShield || null;
+      // Bayat kalkan: korunacak gün çoktan geçti ve ceza uygulama sırası
+      // daha eski bir güne geldi (ör. 3 gün sonra açıldı) → iade edilir.
+      if (shield && shield !== forDay && shield < forDay) {
+        setData((d) => ({
+          ...d,
+          activeEffects: { ...d.activeEffects, penaltyShield: null },
+          inventory: {
+            ...d.inventory,
+            penalty_shield: (d.inventory?.penalty_shield || 0) + 1,
+          },
+        }));
+        setToasts((prev) => [
+          ...prev,
+          {
+            key: `shield_refund_${Date.now()}`,
+            icon: '🛡️',
+            title: 'Ceza Kalkanı kullanılmadı, envanterine geri kondu',
+            color: COLORS.primary,
+          },
+        ]);
+      }
+      if (shield === forDay) {
+        // Kalkan bu günü koruyor: kesinti yapılmaz, kalkan tüketilir.
+        setData((d) => ({
+          ...d,
+          activeEffects: { ...d.activeEffects, penaltyShield: null },
+        }));
+        if (p.count === 0) {
+          setToasts((prev) => [
+            ...prev,
+            {
+              key: `shield_refund_${Date.now()}`,
+              icon: '🛡️',
+              title: 'Ceza Kalkanı kullanılmadı, envanterine geri kondu',
+              color: COLORS.primary,
+            },
+          ]);
+          setData((d) => ({
+            ...d,
+            inventory: {
+              ...d.inventory,
+              penalty_shield: (d.inventory?.penalty_shield || 0) + 1,
+            },
+          }));
+        } else {
+          setToasts((prev) => [
+            ...prev,
+            {
+              key: `shield_${Date.now()}`,
+              icon: '🛡️',
+              title: `Ceza Kalkanı aktif — ${p.count} görev için -${p.deducted} 🪙 kesilmedi`,
+              color: COLORS.primary,
+            },
+          ]);
+        }
+        return;
+      }
       if (p.count === 0) return;
       setData((d) => ({
         ...d,
@@ -510,8 +605,21 @@ export function DataProvider({ children }) {
         },
       ]);
     },
-    [data.habits, data.settings.penaltyEnabled]
+    [data.habits, data.activeEffects]
   );
+
+  // Aktif etki temizliği: gün değişince korunma günleri bayatlar.
+  // - streakFreeze: dünden önceki bir günü korumak anlamsızdır → silinir.
+  // - penaltyShield: ceza uygulaması kendi içinde halledilir (yukarıda).
+  // - xpBoost: hakkı bitene kadar kalır (gün sınırı yok).
+  useEffect(() => {
+    if (loading) return;
+    setData((d) => {
+      const fx = d.activeEffects;
+      if (!fx?.streakFreeze || fx.streakFreeze >= today) return d;
+      return { ...d, activeEffects: { ...fx, streakFreeze: null } };
+    });
+  }, [today, loading]);
 
   // Gün state'i değiştiğinde (gece yarısı, uygulama öne dönünce) ÖNCEKİ
   // günün eksik görevleri için ceza uygulanır. Açık uygulamada gece yarısı
@@ -658,6 +766,14 @@ export function DataProvider({ children }) {
     ]);
   }, [data, loading, today]);
 
+  // ---------- Android widget: veri veya gün değişince tazele ----------
+  // Anlık görüntü AsyncStorage'a yazılır ve widget (varsa) yeniden çizilir.
+  // Gece yarısı geçişi / devOffset değişimi de "today" değişince burada yakalanır.
+  useEffect(() => {
+    if (loading) return;
+    refreshAndroidWidget(data, today);
+  }, [data, loading, today]);
+
   // ---------- Pomodoro: uygulama kapalıyken süre dolduysa ödül ver ----------
   // Kullanıcı zamanlayıcıyı çalıştırıp uygulamayı kapattıysa, tekrar açtığında
   // oturum devam eder; süre dolmuşsa XP ödülü burada otomatik verilir.
@@ -713,8 +829,10 @@ export function DataProvider({ children }) {
       // Kumbara bildirimi: tavanı aşan kısım bankaya aktarılınca gösterilir.
       let bankToast = null;
       const streakAwards = { ...(d.stats.streakAwards || {}) };
-      // Kumbara kuralı map dışında hesaplanır (geri alma yolunda kullanılmaz).
-      const bankState = applyXpWithBank(dayBase, xpBank, xp);
+      // Kumbara kuralı map içinde yeniden hesaplanır (2x XP etkisiyle).
+      let bankState = applyXpWithBank(dayBase, xpBank, xp);
+      // 2x XP Enerjisi: kalan hakkı varsa bu tamamlamada tüketilir.
+      let boostUsed = false;
       let done = false;
       const habits = d.habits.map((h) => {
         if (h.id !== id) return h;
@@ -725,6 +843,12 @@ export function DataProvider({ children }) {
           totalGold = Math.max(0, totalGold - gold);
           dayDelta = { completions: -1, goldEarned: -gold, xpEarned: -xp };
         } else {
+          // 2x XP Enerjisi aktifse bu tamamlamanın XP'si iki katına çıkar
+          // (kumbara kuralı çarpmadan sonra uygulanır — tavan yine korur).
+          const boostLeft = d.activeEffects?.xpBoost?.usesLeft || 0;
+          boostUsed = boostLeft > 0;
+          const boostedXp = boostUsed ? xp * 2 : xp;
+          bankState = applyXpWithBank(dayBase, xpBank, boostedXp);
           // ANTI-FARM (Katman 1): günlük tavan doluysa alışkanlık XP'sinin
           // tavanı aşan kısmı yanmaz — KUMBARADA birikir; ayrıca o gün
           // bankadan 500'e kadar XP "azar azar" geri verilir.
@@ -793,6 +917,20 @@ export function DataProvider({ children }) {
           ]);
         });
       }
+      // 2x XP bildirimi: enerji bu tamamlamada tüketildi.
+      if (boostUsed) {
+        queueMicrotask(() => {
+          setToasts((prev) => [
+            ...prev,
+            {
+              key: `boost_${id}_${Date.now()}`,
+              icon: '⚡',
+              title: `2x XP Enerjisi! +${bankState.freshXp + bankState.releaseXp} XP kazandın`,
+              color: COLORS.accent,
+            },
+          ]);
+        });
+      }
       // Görev sayaçlarını güncelle (gün değiştiyse otomatik sıfırlanır).
       const stats = bumpDay(
         { ...d.stats, totalXp, gold: totalGold, streakAwards, xpBank },
@@ -807,7 +945,12 @@ export function DataProvider({ children }) {
           bankReleased: bankState.day.bankReleased,
         };
       }
-      return { ...d, habits, stats };
+      // 2x XP hakkı tükendiğinde aktif etki sıfırlanır.
+      const effects = d.activeEffects || { streakFreeze: null, penaltyShield: null, xpBoost: { usesLeft: 0 } };
+      const nextEffects = boostUsed
+        ? { ...effects, xpBoost: { usesLeft: Math.max(0, (effects.xpBoost?.usesLeft || 0) - 1) } }
+        : effects;
+      return { ...d, habits, stats, activeEffects: nextEffects };
     });
   }, []);
 
@@ -1188,14 +1331,6 @@ export function DataProvider({ children }) {
     await runSync();
   }, [runSync]);
 
-  // Eksik görev cezasını (gün sonu -15 🪙) açıp kapatır.
-  const setPenaltyEnabled = useCallback((enabled) => {
-    setData((d) => ({
-      ...d,
-      settings: { ...d.settings, penaltyEnabled: !!enabled },
-    }));
-  }, []);
-
   // Günlük hatırlatma saatini ayarlar (0-23, null = kapalı).
   // Uygulama açıkken o saat geldiğinde ekran üstünden hatırlatma gösterilir.
   const setReminderHour = useCallback((hour) => {
@@ -1217,6 +1352,38 @@ export function DataProvider({ children }) {
       settings: { ...d.settings, osNotify: !!value },
     }));
   }, []);
+
+  // Saatlik motivasyon bildirimi anahtarını kalıcı yapar.
+  // Planlama/iptal aşağıdaki effect'te yapılır (görev durumuna göre).
+  const setHourlyNotify = useCallback((value) => {
+    setData((d) => ({
+      ...d,
+      settings: { ...d.settings, hourlyNotify: !!value },
+    }));
+  }, []);
+
+  // Saatlik motivasyon planı: ayar açıkken veri her değiştiğinde (4 sn
+  // debounce ile) bekleyen görev durumu hesaplanır ve bildirim metni ona
+  // göre güncellenir. Ayar kapatılınca plan iptal edilir.
+  const hourlyNotifTimerRef = useRef(null);
+  useEffect(() => {
+    if (loading || authStatus !== 'in') return;
+    if (!data.settings.hourlyNotify) {
+      cancelHourlyMotivation();
+      return;
+    }
+    clearTimeout(hourlyNotifTimerRef.current);
+    hourlyNotifTimerRef.current = setTimeout(() => {
+      const d = dataRef.current;
+      const t = offsetToday();
+      const { base, vip } = getDailyQuests(t);
+      const pending = [...base, ...vip].some(
+        (q) => !questClaimedToday(q, d.questClaims || {}, t)
+      );
+      scheduleHourlyMotivation(pending);
+    }, 4000);
+    return () => clearTimeout(hourlyNotifTimerRef.current);
+  }, [data, loading, authStatus]);
 
   // ---------- Pomodoro eylemleri ----------
   // Oturum "timestamp" tabanlı çalışır: bitiş anı (endAt) saklanır, kalan süre
@@ -1331,7 +1498,7 @@ export function DataProvider({ children }) {
           xpBank: bank.bank,
         },
         today,
-        { pomodoro: 1, goldEarned: gGain, xpEarned: 0 }
+        { pomodoro: 1, focusMinutes: POMODORO_MINUTES, goldEarned: gGain, xpEarned: 0 }
       );
       // Kumbara kuralının gün sayaçları doğrudan işlenir.
       stats.day = {
@@ -1389,6 +1556,28 @@ export function DataProvider({ children }) {
     });
   }, []);
 
+  // ---------- Profil (bio + fotoğraf) ----------
+  // Bio ve profil fotoğrafı hem yerel veriye yazılır hem de sync-profile
+  // üzerinden sunucudaki profiles.bio / profiles.photo_url'ye iletilir
+  // (10 sn rate limit'e takılırsa bir sonraki meta güncellemede yazılır).
+
+  const updateBio = useCallback((text) => {
+    const bio = String(text || '').slice(0, 200);
+    setData((d) => ({ ...d, settings: { ...d.settings, bio } }));
+    const username = authRef.current?.name || activeAccount;
+    if (username) {
+      updateProfileMeta(username, { bio }).catch(() => {});
+    }
+  }, [activeAccount]);
+
+  const setProfilePhoto = useCallback((photoUrl) => {
+    setData((d) => ({ ...d, settings: { ...d.settings, photoUrl: photoUrl || null } }));
+    const username = authRef.current?.name || activeAccount;
+    if (username) {
+      updateProfileMeta(username, { photoUrl: photoUrl || '' }).catch(() => {});
+    }
+  }, [activeAccount]);
+
   // Tema satın alır: altın yeterliyse ödeme yapılır ve "ownedThemes"a eklenir.
   const buyTheme = useCallback((id) => {
     setData((d) => {
@@ -1437,6 +1626,96 @@ export function DataProvider({ children }) {
     });
   }, []);
 
+  // ---------- Eşya (item) eylemleri ----------
+
+  // Eşya satın alır: altın yeterliyse ödeme yapılır ve envanterdeki
+  // adet bir artar. Yetersiz altında veri değişmez.
+  const buyItem = useCallback((id) => {
+    setData((d) => {
+      const item = getItem(id);
+      if (!item) return d;
+      if ((d.stats.gold || 0) < item.price) return d;
+      return {
+        ...d,
+        inventory: {
+          ...(d.inventory || {}),
+          [id]: (d.inventory?.[id] || 0) + 1,
+        },
+        stats: { ...d.stats, gold: (d.stats.gold || 0) - item.price },
+      };
+    });
+  }, []);
+
+  // Eşyayı kullanır: envanterden bir adet düşülür ve etkisi başlar.
+  // - streak_freeze: bugün tüm seriler korunur (tek gün).
+  // - penalty_shield: bu geceki ceza kesilmez (tek gün).
+  // - penalty_shield: bu geceki ceza kesilmez (tek gün).
+  // - xp_boost: sonraki XP_BOOST_USES tamamlamada 2x XP.
+  // Aynı etki zaten aktifse kullanılmaz (xp_boost hak ekleyerek birikir).
+  // Dönüş: { ok } | { ok:false, error } (ekran toast gösterebilir).
+  const useItem = useCallback(
+    (id) => {
+      const snap = dataRef.current;
+      const count = snap.inventory?.[id] || 0;
+      if (count <= 0) return { ok: false, error: 'Bu eşyadan envanterinde yok' };
+      const today = offsetToday();
+      const fx = snap.activeEffects || { streakFreeze: null, penaltyShield: null, xpBoost: { usesLeft: 0 } };
+      if (id === 'streak_freeze') {
+        if (fx.streakFreeze === today) return { ok: false, error: 'Seri Dondurucu bugün zaten aktif' };
+      } else if (id === 'penalty_shield') {
+        if (fx.penaltyShield === today) return { ok: false, error: 'Ceza Kalkanı bugün zaten aktif' };
+      }
+      setData((d) => {
+        const cnt = d.inventory?.[id] || 0;
+        if (cnt <= 0) return d;
+        const e = d.activeEffects || { streakFreeze: null, penaltyShield: null, xpBoost: { usesLeft: 0 } };
+        let next;
+        if (id === 'streak_freeze') {
+          next = { ...e, streakFreeze: today };
+        } else if (id === 'penalty_shield') {
+          next = { ...e, penaltyShield: today };
+        } else if (id === 'xp_boost') {
+          next = { ...e, xpBoost: { usesLeft: (e.xpBoost?.usesLeft || 0) + XP_BOOST_USES } };
+        } else {
+          return d;
+        }
+        return {
+          ...d,
+          inventory: { ...d.inventory, [id]: cnt - 1 },
+          activeEffects: next,
+        };
+      });
+      return { ok: true };
+    },
+    []
+  );
+
+  // ---------- Lig (haftalık) eylemleri ----------
+
+  // Haftalık lig ödülünü alır. Ödül, sunucunun son senkrondaki 7 günlük XP
+  // trendinden (xp7d) türetilen lige göre verilir; hafta başına BİR kez
+  // alınabilir (settings.leagueClaim hafta anahtarıyla izlenir).
+  // Dönüş: { ok, reward } | { ok:false, error }.
+  const claimLeagueReward = useCallback(() => {
+    const snap = dataRef.current;
+    const now = serverNow();
+    const week = weekKeyFor(now);
+    if (snap.settings.leagueClaim?.week === week) {
+      return { ok: false, error: 'Bu haftanın ödülü zaten alındı' };
+    }
+    const me = serverRef.current.leaderboard.find((p) => p.isCurrentUser);
+    const league = getLeague(me?.xp7d || 0);
+    setData((d) => ({
+      ...d,
+      settings: { ...d.settings, leagueClaim: { week, tier: league.id } },
+      stats: {
+        ...d.stats,
+        gold: (d.stats.gold || 0) + league.reward,
+      },
+    }));
+    return { ok: true, reward: league.reward, league };
+  }, []);
+
   // ---------- Görev panosu eylemleri (yeni nesil: günde 4+4 görev) ----------
 
   // Görev ödülünü alır. Kurallar (bkz. quests.js):
@@ -1457,7 +1736,7 @@ export function DataProvider({ children }) {
       if (!quest) return;
       const snap = dataRef.current;
       const today = offsetToday();
-      if (!canClaimQuest(quest, snap.stats.day, snap.questClaims || {}, today)) return;
+      if (!canClaimQuest(quest, snap.stats.day, snap.questClaims || {}, today, snap.habits)) return;
       // Çift basma / eşzamanlı ödül koruması.
       if (claimingRef.current) return;
       claimingRef.current = true;
@@ -1522,7 +1801,7 @@ export function DataProvider({ children }) {
           const bankState = applyXpWithBank(dayBase, d.stats.xpBank || 0, xpGain);
           const cappedXp = bankState.freshXp + bankState.releaseXp;
           const cappedGold = Math.min(goldGain, Math.max(0, DAILY_GOLD_CAP - dayBase.goldEarned));
-          const metricValue = d.stats.day?.key === today ? (d.stats.day?.[q.metric] ?? 0) : 0;
+          const metricValue = questMetricValue(q, d.stats.day, d.habits, today);
           const nextStats = bumpDay(
             {
               ...d.stats,
@@ -1714,9 +1993,9 @@ export function DataProvider({ children }) {
       acceptDuel,
       declineDuel,
       finishDuel,
-      setPenaltyEnabled,
       setReminderHour,
       setOsNotify,
+      setHourlyNotify,
       backupData,
       restoreData,
       backupTs,
@@ -1736,6 +2015,11 @@ export function DataProvider({ children }) {
       selectTheme,
       buyFrame,
       selectFrame,
+      buyItem,
+      useItem,
+      claimLeagueReward,
+      updateBio,
+      setProfilePhoto,
       claimQuest,
       buyVip,
       claimPassReward,
@@ -1761,9 +2045,9 @@ export function DataProvider({ children }) {
       acceptDuel,
       declineDuel,
       finishDuel,
-      setPenaltyEnabled,
       setReminderHour,
       setOsNotify,
+      setHourlyNotify,
       backupData,
       restoreData,
       backupTs,
@@ -1783,6 +2067,11 @@ export function DataProvider({ children }) {
       selectTheme,
       buyFrame,
       selectFrame,
+      buyItem,
+      useItem,
+      claimLeagueReward,
+      updateBio,
+      setProfilePhoto,
       claimQuest,
       buyVip,
       claimPassReward,

@@ -6,28 +6,62 @@
 // - Satın alınan avatarlar "Sahip" listesine eklenir; "Seç" ile
 //   aktif profil fotoğrafın olur (Bugün ekranı ve liderlikte görünür).
 // ============================================================
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Pressable } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import AvatarCircle, { FrameDecor } from '../components/AvatarCircle';
+import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { FRAMES, getShopItem, SHOP_ITEMS } from '../data/shop';
+import { ITEMS } from '../data/items';
+import { pickProfilePhoto, removeProfilePhoto, uploadProfilePhoto } from '../services/avatarService';
 import { THEMES, useTheme } from '../theme';
 
 export default function ShopScreen() {
   const { colors: C } = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
-  const { data, buyAvatar, selectAvatar, buyTheme, selectTheme, buyFrame, selectFrame, vipActive } = useData();
+  const navigation = useNavigation();
+  const { user: authUser } = useAuth();
+  const { data, buyAvatar, selectAvatar, buyTheme, selectTheme, buyFrame, selectFrame, buyItem, vipActive, setProfilePhoto } = useData();
+  const [photoBusy, setPhotoBusy] = useState(false);
   const gold = data.stats.gold || 0;
   const ownedAvatars = data.ownedAvatars || [];
   const ownedThemes = data.ownedThemes || [];
   const ownedFrames = data.ownedFrames || [];
+  const inventory = data.inventory || {};
   const currentAvatar = data.settings.avatarId || 'av_fox';
   const currentItem = getShopItem(currentAvatar);
   const currentThemeId = data.settings.themeId || 'dark';
   const currentFrameId = data.settings.frameId || null;
+  const photoUrl = data.settings.photoUrl || null;
+  const username = data.settings.username || authUser?.name || 'kullanici';
   // VIP çerçeveler yalnızca aktif VIP kullanıcılara gösterilir.
   const shopFrames = FRAMES.filter((f) => !f.vip || vipActive);
+
+  const pickAndUpload = async () => {
+    if (photoBusy) return;
+    setPhotoBusy(true);
+    const picked = await pickProfilePhoto();
+    if (!picked.ok) {
+      if (!picked.canceled) alert(picked.error || 'Fotoğraf seçilemedi');
+      setPhotoBusy(false);
+      return;
+    }
+    const uploaded = await uploadProfilePhoto(username, picked.uri);
+    if (!uploaded.ok) {
+      alert(uploaded.error || 'Yükleme başarısız');
+      setPhotoBusy(false);
+      return;
+    }
+    setProfilePhoto(uploaded.photoUrl);
+    setPhotoBusy(false);
+  };
+
+  const removePhoto = async () => {
+    await removeProfilePhoto(username);
+    setProfilePhoto(null);
+  };
 
   return (
     <ScrollView
@@ -38,7 +72,7 @@ export default function ShopScreen() {
       <View style={styles.titleRow}>
         <View>
           <Text style={styles.screenTitle}>Dükkan</Text>
-          <Text style={styles.screenSub}>Avatarlar, çerçeveler ve temalar</Text>
+          <Text style={styles.screenSub}>Eşyalar, avatarlar, çerçeveler ve temalar</Text>
         </View>
         {/* Altın bakiyesi */}
         <View style={styles.balanceChip}>
@@ -52,6 +86,7 @@ export default function ShopScreen() {
         <AvatarCircle
           avatarId={currentAvatar}
           frameId={currentFrameId}
+          photo={photoUrl}
           size={84}
           ringColor={C.gold}
         />
@@ -64,6 +99,31 @@ export default function ShopScreen() {
         </View>
       </View>
 
+      {/* Profil fotoğrafı eylemleri */}
+      <View style={styles.photoRow}>
+        <Pressable
+          style={[styles.photoBtn, { backgroundColor: C.primary }]}
+          onPress={pickAndUpload}
+          disabled={photoBusy}
+        >
+          <Text style={styles.photoBtnText}>
+            {photoBusy ? '⏳ Yükleniyor…' : photoUrl ? '📷 Fotoğrafı Değiştir' : '📷 Fotoğraf Yükle'}
+          </Text>
+        </Pressable>
+        {photoUrl ? (
+          <Pressable style={[styles.photoBtn, { backgroundColor: C.surfaceLight }]} onPress={removePhoto}>
+            <Text style={styles.photoBtnMuted}>Kaldır</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            style={[styles.photoBtn, { backgroundColor: C.surfaceLight }]}
+            onPress={() => navigation.navigate('Profile')}
+          >
+            <Text style={styles.photoBtnMuted}>Profili Düzenle</Text>
+          </Pressable>
+        )}
+      </View>
+
       {/* Nasıl altın kazanılır? */}
       <View style={styles.howCard}>
         <Text style={styles.howTitle}>🪙 Altın nasıl kazanılır?</Text>
@@ -73,6 +133,40 @@ export default function ShopScreen() {
           <Text style={styles.howItem}>🏆 Başarım aç +25..250</Text>
           <Text style={styles.howItem}>🎯 Günlük görevler +20..150</Text>
         </View>
+      </View>
+
+      {/* Eşya ızgarası (tüketilebilirler) */}
+      <Text style={styles.sectionTitle}>Eşyalar</Text>
+      <View style={styles.grid}>
+        {ITEMS.map((item) => {
+          const count = inventory[item.id] || 0;
+          const affordable = gold >= item.price;
+          return (
+            <View key={item.id} style={styles.itemCard}>
+              <Text style={styles.itemEmoji}>{item.emoji}</Text>
+              <Text style={styles.itemName} numberOfLines={1}>
+                {item.name}
+              </Text>
+              <Text style={styles.itemDesc} numberOfLines={3}>
+                {item.desc}
+              </Text>
+              <Pressable
+                style={[
+                  styles.itemBtn,
+                  styles.btnBuy,
+                  !affordable && styles.btnDisabled,
+                ]}
+                disabled={!affordable}
+                onPress={() => buyItem(item.id)}
+              >
+                <Text style={[styles.btnBuyText, !affordable && styles.btnDisabledText]}>
+                  🪙 {item.price}
+                </Text>
+              </Pressable>
+              <Text style={styles.ownedCount}>{count} adetin var</Text>
+            </View>
+          );
+        })}
       </View>
 
       {/* Tema ızgarası */}
@@ -329,6 +423,26 @@ function makeStyles(C) {
       fontSize: 12,
       lineHeight: 17,
     },
+    photoRow: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    photoBtn: {
+      flex: 1,
+      borderRadius: 12,
+      paddingVertical: 10,
+      alignItems: 'center',
+    },
+    photoBtnText: {
+      color: C.onPrimary,
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    photoBtnMuted: {
+      color: C.text,
+      fontSize: 13,
+      fontWeight: '700',
+    },
     howCard: {
       backgroundColor: C.surface,
       borderRadius: 14,
@@ -419,6 +533,19 @@ function makeStyles(C) {
       color: C.text,
       fontSize: 13,
       fontWeight: '700',
+    },
+    itemDesc: {
+      color: C.textMuted,
+      fontSize: 11,
+      lineHeight: 15,
+      minHeight: 45,
+    },
+    itemEmoji: {
+      fontSize: 34,
+    },
+    ownedCount: {
+      color: C.textMuted,
+      fontSize: 10,
     },
     itemBtn: {
       width: '100%',

@@ -11,10 +11,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import PlayerProfileModal from '../components/PlayerProfileModal';
-import { FrameDecor } from '../components/AvatarCircle';
+import AvatarCircle from '../components/AvatarCircle';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
-import { getAvatarEmoji, getFrame } from '../data/shop';
+import { getAvatarEmoji } from '../data/shop';
 import { bestStreak, levelFromTotalXp } from '../logic';
 import { getLeaderboardData } from '../services/leaderboardService';
 import { useTheme } from '../theme';
@@ -71,7 +71,9 @@ export default function LeaderboardScreen() {
         id: p.id,
         name: p.username,
         emoji: p.isCurrentUser ? getAvatarEmoji(data.settings.avatarId) : '😀',
-        frameId: p.isCurrentUser ? data.settings.frameId : null,
+        avatarId: p.isCurrentUser ? data.settings.avatarId : p.avatarId,
+        frameId: p.isCurrentUser ? data.settings.frameId : p.frameId,
+        photoUrl: p.isCurrentUser ? data.settings.photoUrl : p.photoUrl,
         totalXp: p.xp,
         coins: p.coins,
         streak: 0,
@@ -90,9 +92,11 @@ export default function LeaderboardScreen() {
       {
         id: 'me',
         name: authUser?.name || 'Sen',
-        // Profil fotoğrafı: dükkan avatarın (yoksa varsayılan yıldız).
+        // Profil fotoğrafı: yüklenen fotoğraf, yoksa dükkan avatarın.
         emoji: getAvatarEmoji(data.settings.avatarId),
+        avatarId: data.settings.avatarId,
         frameId: data.settings.frameId,
+        photoUrl: data.settings.photoUrl,
         totalXp: stats.totalXp,
         isMe: true,
         streak: bestStreak(data.habits, today),
@@ -102,7 +106,7 @@ export default function LeaderboardScreen() {
         .map((p) => ({ ...p, isMe: false, isFriend: friendIds.has(p.id) })),
       ...extraFriends.map((f) => ({ ...f, isMe: false, isFriend: true })),
     ].sort((a, b) => b.totalXp - a.totalXp);
-  }, [live, players, friends, stats.totalXp, friendIds, data.habits, today, data.settings.avatarId, data.settings.frameId, meName, authUser?.name]);
+  }, [live, players, friends, stats.totalXp, friendIds, data.habits, today, data.settings.avatarId, data.settings.frameId, data.settings.photoUrl, meName, authUser?.name]);
 
   // ---------- KİLİT EKRANI: seviye 5'ten önce ----------
   if (locked) {
@@ -189,17 +193,13 @@ export default function LeaderboardScreen() {
                   onPress={() => setSelected(e)}
                 >
                   <Text style={styles.podiumMedal}>{MEDALS[rank]}</Text>
-                  {e.frameId ? (
-                    <FrameDecor ring={getFrame(e.frameId)?.emoji} size={48}>
-                      <View style={[styles.podiumAvatar, { borderColor: PODIUM_COLORS[rank] }]}>
-                        <Text style={styles.podiumEmoji}>{e.emoji}</Text>
-                      </View>
-                    </FrameDecor>
-                  ) : (
-                    <View style={[styles.podiumAvatar, { borderColor: PODIUM_COLORS[rank] }]}>
-                      <Text style={styles.podiumEmoji}>{e.emoji}</Text>
-                    </View>
-                  )}
+                  <AvatarCircle
+                    avatarId={e.avatarId}
+                    photo={e.photoUrl}
+                    frameId={e.frameId}
+                    size={48}
+                    ringColor={PODIUM_COLORS[rank]}
+                  />
                   <Text style={styles.podiumName} numberOfLines={1}>
                     {e.name}
                   </Text>
@@ -230,7 +230,12 @@ export default function LeaderboardScreen() {
               <View style={styles.rankBox}>
                 <Text style={[styles.rank, i < 3 && styles.rankTop]}>{i + 1}</Text>
               </View>
-              <Text style={styles.rowEmoji}>{e.emoji}</Text>
+              <AvatarCircle
+                avatarId={e.avatarId}
+                photo={e.photoUrl}
+                frameId={e.frameId}
+                size={38}
+              />
               <View style={styles.rowInfo}>
                 <View style={styles.rowNameLine}>
                   <Text style={styles.rowName} numberOfLines={1}>

@@ -10,10 +10,9 @@ import { useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
-import { getAvatarEmoji, getFrame } from '../data/shop';
 import { sendFriendRequest } from '../services/friendService';
 import { useTheme } from '../theme';
-import { FrameDecor } from './AvatarCircle';
+import AvatarCircle from './AvatarCircle';
 import {
   bestStreak,
   buildDailyCompletions,
@@ -94,21 +93,14 @@ export default function PlayerProfileModal({ player, onClose }) {
           >
             {/* Profil başlığı: avatar, ad, seviye/XP/seri */}
             <View style={styles.profileHeader}>
-              {player.frameId ? (
-                <FrameDecor ring={getFrame(player.frameId)?.emoji} size={84}>
-                  <View style={[styles.avatar, { backgroundColor: C.primaryDark }]}>
-                    <Text style={styles.avatarEmoji}>
-                      {player.avatarId ? getAvatarEmoji(player.avatarId) : player.emoji}
-                    </Text>
-                  </View>
-                </FrameDecor>
-              ) : (
-                <View style={[styles.avatar, { backgroundColor: C.primaryDark }]}>
-                  <Text style={styles.avatarEmoji}>
-                    {player.avatarId ? getAvatarEmoji(player.avatarId) : player.emoji}
-                  </Text>
-                </View>
-              )}
+              <AvatarCircle
+                avatarId={player.avatarId}
+                emoji={player.avatarId ? undefined : player.emoji}
+                frameId={player.frameId}
+                photo={player.photoUrl}
+                size={84}
+                ringColor={C.primary}
+              />
               <Text style={styles.name}>{player.name}</Text>
               {isFriend && <Text style={styles.friendBadge}>Arkadaşın ✓</Text>}
               <View style={styles.headerStats}>

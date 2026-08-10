@@ -54,6 +54,7 @@ export default function NotificationBell() {
                 avatarId={r.avatarId}
                 emoji={r.avatarId ? undefined : r.emoji}
                 frameId={r.frameId}
+                photo={r.photoUrl}
                 size={40}
               />
               <View style={styles.rowInfo}>

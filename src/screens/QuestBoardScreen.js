@@ -21,14 +21,12 @@ import { useNavigation } from '@react-navigation/native';
 import { useData } from '../context/DataContext';
 import { serverNow } from '../services/serverClock';
 import {
-  canClaimQuest,
-  DAILY_QUESTS,
+  getDailyQuests,
   questClaimedToday,
   questProgress,
   questReward,
   QUEST_DIFFICULTIES,
   QUEST_DIFFICULTY_ORDER,
-  VIP_QUESTS,
 } from '../data/quests';
 import { useTheme } from '../theme';
 
@@ -59,16 +57,19 @@ export default function QuestBoardScreen() {
   const claims = data.questClaims || {};
   const dayStats = data.stats.day;
 
+  // Bugünün görevleri: havuzdan güne göre seçilir (rotasyon).
+  const { base: todayQuests, vip: todayVipQuests } = getDailyQuests(today);
+  const allToday = [...todayQuests, ...todayVipQuests];
+
   // Bugün tamamlanan görev sayısı (özet).
-  const doneToday = [...DAILY_QUESTS, ...VIP_QUESTS].filter((q) =>
-    questClaimedToday(q, claims, today)
-  ).length;
+  const doneToday = allToday.filter((q) => questClaimedToday(q, claims, today)).length;
+  const totalToday = todayQuests.length + (vipActive ? todayVipQuests.length : 0);
   const vipDaysLeft = Math.max(0, Math.ceil(((data.settings.vipUntil || 0) - now) / 86400000));
 
   // Tek görev kartı (temel + VIP ortak bileşen).
   const renderQuest = (quest, accent, isVip) => {
     const diff = QUEST_DIFFICULTIES[quest.difficulty];
-    const progress = questProgress(quest, dayStats, claims, today);
+    const progress = questProgress(quest, dayStats, claims, today, data.habits);
     const claimed = questClaimedToday(quest, claims, today);
     const ready = !claimed && progress >= quest.target;
     const pct = Math.min(100, (progress / quest.target) * 100);
@@ -158,7 +159,8 @@ export default function QuestBoardScreen() {
     >
       <Text style={styles.screenTitle}>🎯 Günün Görevleri</Text>
       <Text style={styles.screenSub}>
-        Görevler her gece yarısı sıfırlanır. Bugün {doneToday}/8 görev tamamladın.
+        Görevler her gece yarısı yenilenir ve her gün havuzdan farklı görevler
+        seçilir. Bugün {doneToday}/{totalToday} görev tamamladın.
       </Text>
 
       {offline && (
@@ -190,13 +192,13 @@ export default function QuestBoardScreen() {
         </View>
       )}
 
-      {/* Temel 4 görev */}
+      {/* Temel 4 görev (bugünün seçimi) */}
       {QUEST_DIFFICULTY_ORDER.map((difficulty) => {
-        const quest = DAILY_QUESTS.find((q) => q.difficulty === difficulty);
+        const quest = todayQuests.find((q) => q.difficulty === difficulty);
         if (!quest) return null;
         const diff = QUEST_DIFFICULTIES[difficulty];
         return (
-          <View key={difficulty} style={styles.section}>
+          <View key={quest.id} style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={[styles.sectionIcon, { backgroundColor: C[diff.colorKey] + '22' }]}>
                 <Text style={styles.sectionIconText}>{diff.emoji}</Text>
@@ -211,7 +213,7 @@ export default function QuestBoardScreen() {
         );
       })}
 
-      {/* VIP ekstra 4 görev */}
+      {/* VIP ekstra 4 görev (bugünün seçimi) */}
       {vipActive && (
         <View style={[styles.section, styles.vipSection]}>
           <View style={styles.sectionHeader}>
@@ -223,14 +225,15 @@ export default function QuestBoardScreen() {
               <Text style={styles.sectionDesc}>Yalnızca Pass sahiplerine — 4 görev daha</Text>
             </View>
           </View>
-          {VIP_QUESTS.map((quest) => renderQuest(quest, C.gold, true))}
+          {todayVipQuests.map((quest) => renderQuest(quest, C.gold, true))}
         </View>
       )}
 
       <View style={styles.noteBox}>
         <Text style={styles.noteText}>
-          💡 Tüm görevler uygulamanın kendi sayaçlarıyla otomatik ölçülür ve ödüller
-          sunucu onayıyla verilir. Günde bir kez alınır, gece yarısı sıfırlanır.
+          💡 Görevler her gece yarısı otomatik yenilenir, günde bir kez alınır ve
+          her gün havuzdan farklı görevler seçilir. Tüm görevler uygulamanın kendi
+          sayaçlarıyla ölçülür; ödüller sunucu onayıyla verilir.
         </Text>
       </View>
     </ScrollView>

@@ -27,7 +27,7 @@ export async function getServerProfile(currentUsername) {
   try {
     const { data, error } = await supabase
       .from('profiles')
-      .select('xp, coins, banned, ban_reason, granted_items')
+      .select('xp, coins, banned, ban_reason, granted_items, bio, photo_url')
       .eq('username', currentUsername)
       .maybeSingle();
     if (error) throw error;
@@ -38,9 +38,45 @@ export async function getServerProfile(currentUsername) {
       banned: !!data.banned,
       banReason: data.ban_reason || null,
       grantedItems: Array.isArray(data.granted_items) ? data.granted_items : [],
+      bio: data.bio || '',
+      photoUrl: data.photo_url || null,
     };
   } catch (e) {
     return null;
+  }
+}
+
+// Profil meta bilgilerini (bio / profil fotoğrafı) sunucuya yazar.
+// sync-profile'i deltasız çağırır; 10 sn rate limit'e takılırsa sessiz geçer.
+export async function updateProfileMeta(
+  currentUsername,
+  { bio = null, photoUrl = null } = {}
+) {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    let res;
+    try {
+      res = await fetch(SYNC_FN_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: currentUsername,
+          deltaXp: 0,
+          deltaGold: 0,
+          claimedDay: null,
+          ...(bio !== null ? { bio } : {}),
+          ...(photoUrl !== null ? { photoUrl } : {}),
+        }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!res.ok) return { ok: false, error: `Sunucu hatası (${res.status})` };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: 'Sunucuya ulaşılamadı (çevrimdışı mısın?)' };
   }
 }
 

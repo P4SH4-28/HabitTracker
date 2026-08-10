@@ -26,7 +26,7 @@ export async function searchProfiles(query, currentUsername = null) {
   try {
     let builder = supabase
       .from('profiles')
-      .select('id, username, xp, coins')
+      .select('id, username, xp, coins, avatar_id, frame_id, photo_url')
       .ilike('username', `%${query.trim()}%`)
       .order('username')
       .limit(20);
@@ -101,7 +101,7 @@ export async function getFriends(currentUsername) {
     const otherIds = rows.map((f) => (f.user_id === myId ? f.friend_id : f.user_id));
     const { data: profiles, error: profilesError } = await supabase
       .from('profiles')
-      .select('id, username, xp, coins')
+      .select('id, username, xp, coins, avatar_id, frame_id, photo_url')
       .in('id', otherIds);
     if (profilesError) throw profilesError;
 
@@ -110,6 +110,9 @@ export async function getFriends(currentUsername) {
       name: p.username,
       xp: p.xp,
       coins: p.coins,
+      avatarId: p.avatar_id || null,
+      frameId: p.frame_id || null,
+      photoUrl: p.photo_url || null,
     }));
     return { ok: true, friends };
   } catch (e) {
@@ -194,7 +197,7 @@ export async function getFriendRequests(currentUsername) {
     const senderIds = rows.map((r) => r.user_id);
     const { data: senders, error: sError } = await supabase
       .from('profiles')
-      .select('id, username, xp, coins')
+      .select('id, username, xp, coins, avatar_id, frame_id, photo_url')
       .in('id', senderIds);
     if (sError) throw sError;
 
@@ -208,8 +211,9 @@ export async function getFriendRequests(currentUsername) {
         emoji: '👤',
         streak: 0,
         totalXp: sender.xp || 0,
-        avatarId: null,
-        frameId: null,
+        avatarId: sender.avatar_id || null,
+        frameId: sender.frame_id || null,
+        photoUrl: sender.photo_url || null,
       };
     });
     return { ok: true, requests };
