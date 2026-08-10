@@ -1,13 +1,14 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import {
+  createNavigationContainerRef,
   DarkTheme,
   NavigationContainer,
 } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
-import { useMemo, useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Linking, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { DataProvider, useData } from './src/context/DataContext';
@@ -15,6 +16,7 @@ import { MenuProvider } from './src/context/MenuContext';
 import { levelFromTotalXp } from './src/logic';
 import { initErrorReporter, setErrorHandler } from './src/services/errorReporter';
 import { initNotifications } from './src/services/notifications';
+import { drainWidgetTasks, clearWidgetTasks } from './src/services/widgetService';
 import AppMenu from './src/components/AppMenu';
 import ErrorBoundary, { FatalErrorView } from './src/components/ErrorBoundary';
 import AchievementToast from './src/components/AchievementToast';
@@ -188,14 +190,70 @@ function RootNavigator() {
   );
 }
 
+// Widget tıklamalarından gelen derin bağlantıları işler:
+//   myapp://pomodoro/start → pomodoro'yu anında başlat
+//   myapp://duel/create    → düello kurma ekranına git
+function useDeepLink(onPomodoroStart, onDuelCreate) {
+  useEffect(() => {
+    const handle = (url) => {
+      if (!url) return;
+      const p = url.split('?')[0];
+      if (p.includes('pomodoro/start')) onPomodoroStart();
+      else if (p.includes('duel/create')) onDuelCreate();
+    };
+    // Uygulama kapalıyken tıklanan widget linki (ilk açılış).
+    Linking.getInitialURL().then(handle).catch(() => {});
+    // Uygulama açıkken gelen linkler.
+    const sub = Linking.addEventListener('url', ({ url }) => handle(url));
+    return () => sub.remove();
+  }, [onPomodoroStart, onDuelCreate]);
+}
+
+const navigationRef = createNavigationContainerRef();
+
 function Root() {
-  const { data, loading, server } = useData();
+  const { data, loading, server, startPomodoro, claimQuest } = useData();
   const { user: authUser, status: authStatus } = useAuth();
   // Bildirim handler'ı: ön plandayken gelen bildirimler ekran üstünden
   // gösterilir (initNotifications modül yüklendiğinde kurulur, güvenlidir).
   useEffect(() => {
     initNotifications();
   }, []);
+  // Widget kuyruğundaki görevleri (TASK_DONE) normal akışla tamamla:
+  // uygulama açılır açılmaz bekleyen görevler sunucu doğrulamasıyla ödüllendirilir.
+  // (Widget görünümü DataContext'in kendi refresh'i ile güncellenir.)
+  useEffect(() => {
+    if (authStatus !== 'in' || loading) return;
+    let cancelled = false;
+    (async () => {
+      const pending = await drainWidgetTasks();
+      if (cancelled || pending.length === 0) return;
+      for (const id of pending) {
+        if (cancelled) break;
+        await claimQuest(id);
+      }
+      await clearWidgetTasks(pending);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // claimQuest ref'i sabit olduğu için yalnızca oturum/yükleme değişince çalışır.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authStatus, loading]);
+
+  // Widget derin bağlantıları: pomodoro'yu başlat / düello ekranına git.
+  const handlePomodoroStart = useCallback(() => {
+    if (navigationRef.isReady()) {
+      navigationRef.navigate('Main', { screen: 'Home' });
+    }
+    startPomodoro();
+  }, [startPomodoro]);
+  const handleDuelCreate = useCallback(() => {
+    if (navigationRef.isReady()) {
+      navigationRef.navigate('Main', { screen: 'Social' });
+    }
+  }, []);
+  useDeepLink(handlePomodoroStart, handleDuelCreate);
   // Aktif temanın renkleri: tema değişince tüm ağaç yeniden çizilir.
   const colors = useMemo(() => resolveTheme(data.settings.themeId), [data.settings.themeId]);
   const navTheme = useMemo(
@@ -256,7 +314,7 @@ function Root() {
           {/* Tema deseni: ekranlar saydam olduğu için aradan görünür. */}
           <BackgroundPattern />
           {/* Navigasyon ağacı: sekmeler + menü ekranları burada çalışır. */}
-          <NavigationContainer theme={navTheme}>
+          <NavigationContainer ref={navigationRef} theme={navTheme}>
             <StatusBar style="light" />
             <RootNavigator />
             {/* Sol menü (drawer): Günün Görevleri / Season Pass / Ayarlar / Yönetici */}

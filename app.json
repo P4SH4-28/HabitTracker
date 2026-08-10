@@ -7,6 +7,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0B0E14",
+    "scheme": "myapp",
     "ios": {
       "supportsTablet": true
     },
@@ -41,12 +42,48 @@
         {
           "widgets": [
             {
-              "name": "HabitTracker",
-              "label": "Habit Tracker",
-              "description": "Bugünün alışkanlıkları ve seriler",
+              "name": "StreakWidget",
+              "label": "Seri Takip",
+              "description": "Seri sayın ve bugünün hedefleri",
+              "minWidth": "110dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 2,
+              "targetCellHeight": 2,
+              "previewImage": "./assets/icon.png",
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "PomodoroWidget",
+              "label": "Pomodoro Başlat",
+              "description": "Tek dokunuşla odak seansı başlat",
+              "minWidth": "110dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 2,
+              "targetCellHeight": 2,
+              "previewImage": "./assets/icon.png",
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "QuickTaskWidget",
+              "label": "Hızlı Görevler",
+              "description": "Günün görevlerini widget'tan tamamla",
               "minWidth": "250dp",
               "minHeight": "110dp",
               "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "previewImage": "./assets/icon.png",
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "DuelWidget",
+              "label": "Düello Ayarla",
+              "description": "Arkadaşınla hızlı düello başlat",
+              "minWidth": "110dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 2,
               "targetCellHeight": 2,
               "previewImage": "./assets/icon.png",
               "resizeMode": "horizontal|vertical",

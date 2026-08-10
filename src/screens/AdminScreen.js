@@ -48,6 +48,11 @@ export default function AdminScreen() {
   const [grantTab, setGrantTab] = useState('theme');
   const [logs, setLogs] = useState([]);
   const [showLogs, setShowLogs] = useState(false);
+  // Para transferi: kaynak hesaptan hedef hesaba XP/altın aktarır.
+  const [transferFrom, setTransferFrom] = useState('');
+  const [transferTo, setTransferTo] = useState('');
+  const [transferXp, setTransferXp] = useState('');
+  const [transferGold, setTransferGold] = useState('');
 
   const actor = authUser?.name || 'P4SH4';
 
@@ -75,6 +80,9 @@ export default function AdminScreen() {
     setBusy('');
     if (!r.ok) return notify(false, r.error);
     setSelected(r.data.user);
+    // Transfer hedefini seçili kullanıcıya ön doldur (kaynak admin).
+    setTransferFrom(actor);
+    setTransferTo(username);
   };
 
   const refreshSelected = async () => {
@@ -124,6 +132,39 @@ export default function AdminScreen() {
     setGoldInput('');
     notify(true, sign > 0 ? 'Ödül verildi' : 'Ceza kesildi');
     await refreshSelected();
+  };
+
+  // XP/altın aktarımı: transferFrom hesabından transferTo hesabına.
+  const doTransfer = async () => {
+    const from = transferFrom.trim();
+    const to = transferTo.trim();
+    const xp = Number(transferXp);
+    const gold = Number(transferGold);
+    if (!from || !to) return notify(false, 'Kaynak ve hedef kullanıcı adını gir');
+    if (from === to) return notify(false, 'Kaynak ve hedef aynı olamaz');
+    if (!Number.isFinite(xp) || !Number.isFinite(gold) || (xp <= 0 && gold <= 0)) {
+      return notify(false, 'Geçerli XP/altın miktarı gir');
+    }
+    setBusy('transfer');
+    const r = await adminAction('transfer', actor, {
+      source: from,
+      target: to,
+      xp,
+      coins: gold,
+    });
+    setBusy('');
+    if (!r.ok) {
+      if (r.error === 'insufficient_balance') {
+        return notify(false, `${from} hesabında yeterli bakiye yok (${r.balance?.xp ?? 0} XP / ${r.balance?.coins ?? 0} 🪙)`);
+      }
+      return notify(false, r.error);
+    }
+    setTransferXp('');
+    setTransferGold('');
+    notify(true, `${from} → ${to}: ${xp} XP + ${gold} 🪙 aktarıldı`);
+    if (selected && (selected.username === from || selected.username === to)) {
+      await refreshSelected();
+    }
   };
 
   const doGrant = async (itemType, itemId) => {
@@ -362,6 +403,56 @@ export default function AdminScreen() {
                   <Text style={styles.takeButtonText}>⚖️ Ceza Kes</Text>
                 </Pressable>
               </View>
+            </View>
+
+            {/* ---------- Para Transferi ---------- */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>💰 Para Transferi</Text>
+              <Text style={styles.muted}>
+                Kaynak hesaptan hedef hesaba XP ve altın aktarır (kaynak bakiyesi düşer).
+              </Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Kaynak kullanıcı adı (gönderen)"
+                placeholderTextColor={C.textMuted}
+                value={transferFrom}
+                onChangeText={setTransferFrom}
+                autoCapitalize="none"
+              />
+              <View style={{ height: 8 }} />
+              <TextInput
+                style={styles.input}
+                placeholder="Hedef kullanıcı adı (alan)"
+                placeholderTextColor={C.textMuted}
+                value={transferTo}
+                onChangeText={setTransferTo}
+                autoCapitalize="none"
+              />
+              <View style={styles.adjustRow}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="XP"
+                  placeholderTextColor={C.textMuted}
+                  value={transferXp}
+                  onChangeText={setTransferXp}
+                  keyboardType="number-pad"
+                />
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="Altın"
+                  placeholderTextColor={C.textMuted}
+                  value={transferGold}
+                  onChangeText={setTransferGold}
+                  keyboardType="number-pad"
+                />
+              </View>
+              <Pressable
+                style={[styles.giveButton, busy === 'transfer' && { opacity: 0.6 }]}
+                onPress={doTransfer}
+                disabled={busy !== ''}
+              >
+                <Text style={styles.giveButtonText}>↔️ Aktar</Text>
+              </Pressable>
             </View>
 
             {/* ---------- Hediye ---------- */}

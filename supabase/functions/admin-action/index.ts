@@ -5,6 +5,7 @@
 //   get_user     — profil detayı + 7 günlük XP trendi
 //   ban / unban  — yasaklama (sync engellenir, liderlikten gizlenir)
 //   adjust       — XP/altın cezası veya ödülü (pozitif/negatif)
+//   transfer     — XP/altını bir kullanıcıdan başkasına aktar
 //   grant/revoke — hediye: tema, avatar, çerçeve ver/geri al
 //   unflag       — şüpheli bayrağını kaldır
 //   logs         — denetim günlüğü (son 30 işlem)
@@ -168,6 +169,70 @@ Deno.serve(async (req) => {
       if (error) return json(req, 500, { error: 'adjust_failed' });
       await log(actor, 'adjust', target, `xp:${xp} coins:${coins}`);
       return json(req, 200, { ok: true, user: { xp: newXp, coins: newCoins } });
+    }
+
+    case 'transfer': {
+      // XP/altın aktarımı: source hesabından target hesabına.
+      // source bakiyesi düşer, target bakiyesi artar. İkisi de aynı
+      // istek içinde yazılır; kaynakta yeterli bakiye yoksa reddedilir.
+      const source = typeof body?.source === 'string' ? body.source.trim() : '';
+      if (!source) return json(req, 400, { error: 'source_required' });
+      if (!target) return json(req, 400, { error: 'target_required' });
+      if (source === target) return json(req, 400, { error: 'same_account' });
+      const xp = Number(body?.xp);
+      const coins = Number(body?.coins);
+      if (!Number.isFinite(xp) || !Number.isFinite(coins)) {
+        return json(req, 400, { error: 'invalid_amounts' });
+      }
+      const xpR = Math.round(xp);
+      const coinsR = Math.round(coins);
+      if (xpR < 0 || coinsR < 0) return json(req, 400, { error: 'negative_amount' });
+      if (xpR === 0 && coinsR === 0) return json(req, 400, { error: 'empty_transfer' });
+
+      const src = await getProfile(source);
+      if (!src) return json(req, 404, { ok: false, error: 'source_not_found' });
+      const dst = await getProfile(target);
+      if (!dst) return json(req, 404, { ok: false, error: 'target_not_found' });
+
+      if ((src.xp ?? 0) < xpR || (src.coins ?? 0) < coinsR) {
+        return json(req, 409, {
+          ok: false,
+          error: 'insufficient_balance',
+          balance: { xp: src.xp ?? 0, coins: src.coins ?? 0 },
+        });
+      }
+
+      const newSrcXp = (src.xp ?? 0) - xpR;
+      const newSrcCoins = (src.coins ?? 0) - coinsR;
+      const newDstXp = (dst.xp ?? 0) + xpR;
+      const newDstCoins = (dst.coins ?? 0) + coinsR;
+
+      // Tek istek: kaynak düş + hedef artır (sıralı — ara durum kısa).
+      const { error: srcErr } = await supabase
+        .from('profiles')
+        .update({ xp: newSrcXp, coins: newSrcCoins })
+        .eq('username', source);
+      if (srcErr) return json(req, 500, { error: 'source_update_failed' });
+
+      const { error: dstErr } = await supabase
+        .from('profiles')
+        .update({ xp: newDstXp, coins: newDstCoins })
+        .eq('username', target);
+      if (dstErr) {
+        // Hedef yazılamazsa kaynağı geri al (basit geri alma).
+        await supabase
+          .from('profiles')
+          .update({ xp: src.xp ?? 0, coins: src.coins ?? 0 })
+          .eq('username', source);
+        return json(req, 500, { error: 'target_update_failed' });
+      }
+
+      await log(actor, 'transfer', target, `from:${source} xp:${xpR} coins:${coinsR}`);
+      return json(req, 200, {
+        ok: true,
+        source: { xp: newSrcXp, coins: newSrcCoins },
+        target: { xp: newDstXp, coins: newDstCoins },
+      });
     }
 
     case 'grant': {
