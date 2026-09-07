@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../theme';
+import AnimatedCounter from './AnimatedCounter';
 
 export default function StatCard({ label, value, icon, color }) {
   const { colors: C } = useTheme();
@@ -10,7 +11,7 @@ export default function StatCard({ label, value, icon, color }) {
       <View style={[styles.iconBox, { backgroundColor: (color || C.primary) + '22' }]}>
         <Text style={styles.icon}>{icon}</Text>
       </View>
-      <Text style={styles.value}>{value}</Text>
+      <AnimatedCounter value={value} style={styles.value} />
       <Text style={styles.label}>{label}</Text>
     </View>
   );

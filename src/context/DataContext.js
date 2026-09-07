@@ -86,6 +86,7 @@ import {
 } from '../services/syncService';
 import { useSyncEngine } from '../hooks/useSyncEngine';
 import { purchaseVip } from '../services/vipService';
+import { celebrate } from '../services/effects';
 import {
   cancelHourlyMotivation,
   scheduleHourlyMotivation,
@@ -933,6 +934,8 @@ export function DataProvider({ children }) {
               color: COLORS.danger,
             },
           ]);
+          // Seri kilometre taşı: mini konfeti patlaması.
+          celebrate({ source: 'streak', mode: 'mini', origin: { x: 0.5, y: 0.32 } });
         });
       }
       // Kumbara bildirimi: tavanı aşan XP bankaya aktarıldı.
@@ -1163,6 +1166,16 @@ export function DataProvider({ children }) {
     return true;
   }, []);
 
+  // useSyncEngine'in döndürdüğü setter'lar (setPending/setSyncing/setLastSync)
+  // runSync tarafından kullanılır. runSync ⇄ refreshServer ⇄ useSyncEngine
+  // döngüsünü kırmak için runSync bir ref üzerinden çağrılır; böylece
+  // setter'lar TDZ'ye takılmadan runSync'in deps'inde kullanılabilir.
+  const runSyncRef = useRef(null);
+  const refreshServer = useCallback(async () => {
+    if (runSyncRef.current) await runSyncRef.current();
+  }, []);
+  const { syncState, setPending, setSyncing, setLastSync } = useSyncEngine(refreshServer);
+
   const runSync = useCallback(async () => {
     if (pushRef.current) return;
     pushRef.current = true;
@@ -1244,6 +1257,11 @@ export function DataProvider({ children }) {
       setSyncing(false);
     }
   }, [publishProfile, pullServer, refreshServerMeta, setPending, setLastSync, setSyncing]);
+
+  // runSync ilk tanımlandığında ref güncellenir; refreshServer bu ref'ten çağrılır.
+  useEffect(() => {
+    runSyncRef.current = runSync;
+  }, [runSync]);
 
   // Arkadaşlığı kaldırır (Supabase'de iki yönlü, kullanıcı adıyla).
   const removeFriend = useCallback(
@@ -1416,16 +1434,6 @@ export function DataProvider({ children }) {
     },
     [pullServer]
   );
-
-  // Sunucudan veriyi elle tazeler (profil yayınlar + her şeyi çeker).
-  const refreshServer = useCallback(async () => {
-    await runSync();
-  }, [runSync]);
-
-  // ---------- Offline-First Sync Engine ----------
-  // NetInfo + AppState'i dinler; bağlantı geldiğinde / uygulama öne
-  // döndüğünde runSync'i SESSİZCE tetikler. UI asla bloklanmaz.
-  const { syncState, setPending, setSyncing, setLastSync } = useSyncEngine(refreshServer);
 
   // Kuyruk boyutunu izle: veri her değiştiğinde bekleyen mutasyon sayısı
   // güncellenir (SyncStatusChip "çevrimdışı · N değişiklik" gösterir).
@@ -1639,6 +1647,20 @@ export function DataProvider({ children }) {
   // Kayan bildirimi kapatır (kuyruktaki ilk öğeyi gizler).
   const dismissToast = useCallback((key) => {
     setToasts((prev) => prev.filter((t) => t.key !== key));
+  }, []);
+
+  // Kayan bildirim kuyruğuna yeni toast ekler (dış bileşenlerden erişim).
+  // item: { icon?, title, color? }
+  const pushToast = useCallback((item) => {
+    setToasts((prev) => [
+      ...prev,
+      {
+        key: `toast_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        icon: item.icon || '✨',
+        title: item.title || '',
+        color: item.color || COLORS.accent,
+      },
+    ]);
   }, []);
 
   // Seviye kutlama modasını kapatır.
@@ -2122,120 +2144,153 @@ export function DataProvider({ children }) {
   // Ekranlar bu değerle VIP görevlerini/ödüllerini gösterir.
   const vipActive = isVipActive(data, serverNow());
 
-  // Context değeri yalnızca ilgili değişkenler değişince yenilenir (memo).
-  const value = useMemo(
-    () => ({
-      data,
-      loading,
-      today,
-      addHabit,
-      toggleHabit,
-      deleteHabit,
-      server,
-      refreshing: server.syncing,
-      refreshServer,
-      requestFriend,
-      acceptRequest,
-      declineRequest,
-      removeFriend,
-      challengeDuel,
-      acceptDuel,
-      declineDuel,
-      finishDuel,
-      setReminderHour,
-      setOsNotify,
-      setHourlyNotify,
-      backupData,
-      restoreData,
-      backupTs,
-      resetAll,
-      levelUpEvent,
-      dismissLevelUp,
-      toasts,
-      dismissToast,
-      startPomodoro,
-      pausePomodoro,
-      resumePomodoro,
-      resetPomodoro,
-      completePomodoro,
-      buyAvatar,
-      selectAvatar,
-      buyTheme,
-      selectTheme,
-      buyFrame,
-      selectFrame,
-      buyItem,
-      useItem,
-      claimLeagueReward,
-      updateBio,
-      setProfilePhoto,
-      claimQuest,
-      buyVip,
-      claimPassReward,
-      vipActive,
-      pendingSync,
-      // Offline-First Sync Engine durumu (useSyncEngine + mutation kuyruğu).
-      isOnline: syncState.isOnline,
-      pendingCount: syncState.pendingCount,
-      isSyncing: syncState.isSyncing,
-      lastSyncedAt: syncState.lastSyncedAt,
-      leaderboardMinLevel: LEADERBOARD_MIN_LEVEL,
-      leaderboardMinXp: LEADERBOARD_MIN_XP,
-    }),
-    [
-      data,
-      loading,
-      today,
-      addHabit,
-      toggleHabit,
-      deleteHabit,
-      server,
-      refreshServer,
-      requestFriend,
-      acceptRequest,
-      declineRequest,
-      removeFriend,
-      challengeDuel,
-      acceptDuel,
-      declineDuel,
-      finishDuel,
-      setReminderHour,
-      setOsNotify,
-      setHourlyNotify,
-      backupData,
-      restoreData,
-      backupTs,
-      resetAll,
-      levelUpEvent,
-      dismissLevelUp,
-      toasts,
-      dismissToast,
-      startPomodoro,
-      pausePomodoro,
-      resumePomodoro,
-      resetPomodoro,
-      completePomodoro,
-      buyAvatar,
-      selectAvatar,
-      buyTheme,
-      selectTheme,
-      buyFrame,
-      selectFrame,
-      buyItem,
-      useItem,
-      claimLeagueReward,
-      updateBio,
-      setProfilePhoto,
-      claimQuest,
-      buyVip,
-      claimPassReward,
-      vipActive,
-      pendingSync,
-      syncState,
-    ]
-  );
+  // --- Context value stabilization with useRef ---
+  // React'te useMemo'in dependency array'inde function'lar bulunursa,
+  // memo her render'de "new" objesi olarak değerlendirilir ve
+  // tüm context tüketicleri yeniden render olur.
+  // Bu yüzden value'i useRef ile stabilization yaparız: referans her zaman aynı kalır,
+  // sadece içindeki state değişkenler değişince bile child'lar yeniden render olmaz.
+  const contextValueRef = useRef({
+    data,
+    loading,
+    today,
+    server,
+    refreshing: server.syncing,
+    toasts,
+    dismissToast,
+    pushToast,
+    levelUpEvent,
+    dismissLevelUp,
+    vipActive,
+    pendingSync,
+    isOnline: syncState.isOnline,
+    pendingCount: syncState.pendingCount,
+    isSyncing: syncState.isSyncing,
+    lastSyncedAt: syncState.lastSyncedAt,
+    leaderboardMinLevel: LEADERBOARD_MIN_LEVEL,
+    leaderboardMinXp: LEADERBOARD_MIN_XP,
+  });
 
-  return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
+  // Her render'da ref'i güncelle (nesne oluşturma değil, property atama).
+  contextValueRef.current = {
+    data,
+    loading,
+    today,
+    server,
+    refreshing: server.syncing,
+    toasts,
+    dismissToast,
+    pushToast,
+    levelUpEvent,
+    dismissLevelUp,
+    vipActive,
+    pendingSync,
+    isOnline: syncState.isOnline,
+    pendingCount: syncState.pendingCount,
+    isSyncing: syncState.isSyncing,
+    lastSyncedAt: syncState.lastSyncedAt,
+    leaderboardMinLevel: LEADERBOARD_MIN_LEVEL,
+    leaderboardMinXp: LEADERBOARD_MIN_XP,
+  };
+
+  // Provider'a stabilized ref value gönder.
+  const ctxValue = contextValueRef.current;
+
+  // --- Actions ref: external access for component methods ---
+  // Bileşenler useData() üzerinden erişir, ancak functions
+  // context value değişmediği için (ref sayesinde) tekrar render değildir.
+  const actionsRef = useRef({
+    addHabit,
+    toggleHabit,
+    deleteHabit,
+    refreshServer,
+    requestFriend,
+    acceptRequest,
+    declineRequest,
+    removeFriend,
+    challengeDuel,
+    acceptDuel,
+    declineDuel,
+    finishDuel,
+    setReminderHour,
+    setOsNotify,
+    setHourlyNotify,
+    backupData,
+    restoreData,
+    backupTs,
+    resetAll,
+    levelUpEvent,
+    dismissLevelUp,
+    startPomodoro,
+    pausePomodoro,
+    resumePomodoro,
+    resetPomodoro,
+    completePomodoro,
+    buyAvatar,
+    selectAvatar,
+    buyTheme,
+    selectTheme,
+    buyFrame,
+    selectFrame,
+    buyItem,
+    useItem,
+    claimLeagueReward,
+    updateBio,
+    setProfilePhoto,
+    claimQuest,
+    buyVip,
+    claimPassReward,
+    dismissToast,
+    pushToast,
+  });
+
+  // Render anındaki latest referansı koru.
+  actionsRef.current = {
+    addHabit,
+    toggleHabit,
+    deleteHabit,
+    refreshServer,
+    requestFriend,
+    acceptRequest,
+    declineRequest,
+    removeFriend,
+    challengeDuel,
+    acceptDuel,
+    declineDuel,
+    finishDuel,
+    setReminderHour,
+    setOsNotify,
+    setHourlyNotify,
+    backupData,
+    restoreData,
+    backupTs,
+    resetAll,
+    levelUpEvent,
+    dismissLevelUp,
+    startPomodoro,
+    pausePomodoro,
+    resumePomodoro,
+    resetPomodoro,
+    completePomodoro,
+    buyAvatar,
+    selectAvatar,
+    buyTheme,
+    selectTheme,
+    buyFrame,
+    selectFrame,
+    buyItem,
+    useItem,
+    claimLeagueReward,
+    updateBio,
+    setProfilePhoto,
+    claimQuest,
+    buyVip,
+    claimPassReward,
+    dismissToast,
+    pushToast,
+  };
+
+  return <DataContext.Provider value={ctxValue}>{children}</DataContext.Provider>;
 }
 
 // Ekranlarda veriye erişmek için: const { data, today } = useData();
@@ -2244,3 +2299,5 @@ export function useData() {
   if (!ctx) throw new Error('useData must be used within DataProvider');
   return ctx;
 }
+
+

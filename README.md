@@ -8,12 +8,13 @@ Alışkanlıklarını oyunlaştırarak takip et, XP kazan, seviye atla, görevle
 
 | | |
 |---|---|
-| 🏃 **Alışkanlık takibi** | Günlük alışkanlıklar, ikon + renk seçimi, kaçırılan görevlerde altın cezası |
-| 🔥 **Seri ödülleri** | 3/7/14/30/60 günlük serilerde bonus XP + altın (eşik başına bir kez) |
+| 🏃 **Alışkanlık takibi** | Günlük alışkanlıklar, ikon + renk seçimi, kaçırılan görevlerde altın cezası; boş ekranda 1 dokunuşla "Hızlı başlangıç" önerileri |
+| 🔥 **Seri ödülleri** | 3/7/14/30/60 günlük serilerde bonus XP + altın (eşik başına bir kez) + 🎊 mini-konfeti patlaması |
+| 🎉 **Kutlama deneyimi** | Seviye atlayınca gerçek konfeti + altın puls modal + success haptiği; alışkanlık tamamlamada ✓ daire spring "bonk" + renkli glow |
 | ⚡ **XP & Seviye** | Tamamlanan her görev XP kazandırır; seviye atlayınca kutlama modalı |
 | 🪙 **Altın ekonomisi** | Görev 5 🪙, pomodoro 15 🪙; cezalar 15 🪙 |
 | 📋 **Görev Panosu** | 60 görevlik katalog, 4 zorluk (30dk – 2sa), otomatik + manuel görevler, bekleme süreleri |
-| 🛍️ **Dükkan** | Avatar, avatar çerçevesi ve 13 tema — altınla satın alınır |
+| 🛍️ **Dükkan** | Sekmeli yapı (Eşyalar/Avatarlar/Çerçeveler/Temalar), tema kartına dokununca **canlı mini önizleme**, sahip olduklarında ✓ rozeti, satın alımda toast + haptic |
 | 🏆 **Liderlik** | Seviye 5'te açılır; arkadaşlar + kendin, 7 günlük XP trendi, şüpheli kullanıcı rozeti |
 | 👥 **Arkadaşlar** | Kullanıcı adıyla arama, istek gönder/kabul et/reddet |
 | ⚔️ **Arkadaş Düellosu** | 7 günlük XP yarışı: davet → kabul → canlı skor çubuğu → kazanan +100 XP / +50 🪙 |
@@ -22,12 +23,23 @@ Alışkanlıklarını oyunlaştırarak takip et, XP kazan, seviye atla, görevle
 | 🎒 **Envanter & Eşyalar** | Seri Dondurucu, Ceza Kalkanı, 2x XP Enerjisi — altınla alınır, etkileri sunucu gününe bağlı |
 | 🏅 **Haftalık Ligler** | 7 günlük XP'ye göre Bronz → Elmas, hafta sonu altın ödülü |
 | 👥 **Takımlar (Kulüpler)** | Takım kur/katıl, ortak 1000 XP haftalık hedefi, üye sıralaması |
-| 📷 **Profil** | Bio + profil fotoğrafı (Supabase Storage), AvatarCircle ile vitrin |
+| 📷 **Profil** | Bio + profil fotoğrafı (Supabase Storage), istatistik özet kartı (seviye barı, aktif alışkanlık, odak seansı, başarımlar) |
+| 📊 **Gelişim ekranı** | Isı haritası + çubuk grafikler **animasyonlu** (kademeli beliriş, yaylanan çubuklar, sayaçlar); bugün hücresi nabız atar |
 | 🧩 **Android Widget** | Ana ekranda bugünün alışkanlıkları, seriler ve altın — canlı güncelleme |
-| 🔔 **OS Bildirimleri** | Ayarlanan saatte uygulama KAPALIYKEN bile gerçek hatırlatma + saatlik motivasyon |
+| 🔔 **OS Bildirimleri** | Ayarlanan saatte uygulama KAPALIYKEN bile gerçek hatırlatma + saatlik motivasyon; akşam bildirimi kalan görev sayısına göre üretilir ("X kaldı" / "tamamladın 🎉") |
 | 🔑 **Şifre kurtarma** | Kayıtta üretilen kurtarma anahtarıyla şifre sıfırlama (cihaz değişse bile) |
 | 👋 **İlk açılış rehberi** | Yeni kullanıcıya 3 sayfalık tanıtım |
 | 💾 **Yedek & Senkron** | Cihaz içi yedek + Supabase bulut senkronu (cihaz değişince devam et) |
+
+## 🎨 GUI Modernizasyonu
+
+Uygulama genelinde konfor ve etkileşim katmanı (Faz A–C):
+
+- **Basınç feedback:** `PressableFX` — tüm ana butonlarda basınca ölçek animasyonu + cihazda haptik "tap"
+- **Animasyonlu sayaçlar:** `AnimatedCounter` — altın/seri/XP/istatistik değerleri değişince yumuşakça sayılır
+- **Skeleton yükleme:** veri yüklenirken spinner yerine titreşimli iskelet ekranı
+- **Dükkan revizyonu:** sekmeler, canlı tema önizlemesi (renklerle mini ekran mock'u), sahip rozeti
+- **Silme güvenliği:** alışkanlık silme artık alt-sheet onayı ister — anında silinmez
 
 ## 🛡️ Anti-Farm Mimarisi (5 Katman)
 
@@ -45,6 +57,7 @@ Oyun ekonomisini korumak için çok katmanlı bir savunma kuruldu:
 - **Supabase** — PostgreSQL (RLS + servis rolü) + Edge Functions (Deno)
 - **React Navigation** — alt sekmeli navigasyon
 - **AsyncStorage** — yerel veri + oturum kalıcılığı
+- **expo-haptics** — dokunsal geri bildirim (apan/ödül haptikleri)
 - **GitHub Actions** — otomatik APK derleme
 
 ## 🚀 Çalıştırma
@@ -125,10 +138,10 @@ Edge function karar mantıkları (tavan, saat koruması, ban, hediye) yerel sim�
 ├── App.js                      # Kök: navigasyon, tema, yasak ekranı
 ├── src/
 │   ├── screens/                # Home, Quest, Shop, Progress, Leaderboard, Friends, Settings, Admin
-│   ├── components/             # HabitCard, Sheet, Modals, tostlar…
+│   ├── components/             # HabitCard, Sheet, Modals, Confetti, PressableFX, AnimatedCounter, SplashSkeleton…
 │   ├── context/                # AuthContext (oturum) + DataContext (veri/senkron)
-│   ├── services/               # sync, profile, leaderboard, friend, admin, serverClock
-│   ├── data/                   # quests (görev kataloğu), shop (ürünler), achievements
+│   ├── services/               # sync, profile, leaderboard, friend, admin, serverClock, effects, sfx
+│   ├── data/                   # quests (görev kataloğu), shop (ürünler), achievements, starterHabits
 │   ├── logic.js                # XP/seviye matematiği, tavan sabitleri
 │   └── theme.js                # 13 tema tanımı
 ├── supabase/

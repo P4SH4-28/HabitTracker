@@ -119,6 +119,7 @@ function EditSheet({ visible, title, fields, buttonLabel, onSubmit, onClose }) {
 export default function SettingsScreen() {
   const {
     data,
+    today,
     setReminderHour,
     setOsNotify,
     setHourlyNotify,
@@ -136,13 +137,17 @@ export default function SettingsScreen() {
   const reminderHour = data.settings.reminderHour;
   const osNotify = !!data.settings.osNotify;
   const hourlyNotify = !!data.settings.hourlyNotify;
+  // Bugün henüz tamamlanmamış alışkanlık sayısı → hatırlatma metnini
+  // planlama anında güncel tutar: 0 ise kutlama, >0 ise kalan sayı.
+  const pendingToday =
+    data.habits.length - data.habits.filter((h) => h.completedDates.includes(today)).length;
 
   // OS bildirimi açıkken saat değiştirilirse plan yenilenir.
   useEffect(() => {
     if (osNotify && reminderHour != null) {
-      scheduleDailyReminder(reminderHour);
+      scheduleDailyReminder(reminderHour, pendingToday);
     }
-  }, [reminderHour, osNotify]);
+  }, [reminderHour, osNotify, pendingToday]);
 
   // "Kapalıyken de hatırlatsın" anahtarı: izin iste + planla / iptal et.
   const toggleOsNotify = async (value) => {
@@ -153,7 +158,7 @@ export default function SettingsScreen() {
         return;
       }
       if (reminderHour == null) setReminderHour(20);
-      const r = await scheduleDailyReminder(reminderHour ?? 20);
+      const r = await scheduleDailyReminder(reminderHour ?? 20, pendingToday);
       if (!r.ok) {
         notify('Hata', r.error || 'Hatırlatma planlanamadı.');
         return;

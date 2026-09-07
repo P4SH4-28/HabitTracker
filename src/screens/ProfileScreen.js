@@ -7,9 +7,12 @@
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import AnimatedCounter from '../components/AnimatedCounter';
 import AvatarCircle from '../components/AvatarCircle';
+import PressableFX from '../components/PressableFX';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
+import { ACHIEVEMENTS } from '../data/achievements';
 import { levelFromTotalXp, bestStreak } from '../logic';
 import { pickProfilePhoto, removeProfilePhoto, uploadProfilePhoto } from '../services/avatarService';
 import { useTheme } from '../theme';
@@ -26,6 +29,9 @@ export default function ProfileScreen() {
   const photoUrl = settings.photoUrl || null;
   const levelInfo = levelFromTotalXp(stats.totalXp);
   const streak = bestStreak(habits, today);
+  const xpPct = Math.min(100, Math.round((levelInfo.curXp / levelInfo.nextThreshold) * 100));
+  const doneToday = habits.filter((h) => h.completedDates.includes(today)).length;
+  const unlockedCount = (data.achievements || []).length;
 
   // ---------- Bio ----------
   const [bioDraft, setBioDraft] = useState(settings.bio || '');
@@ -115,21 +121,73 @@ export default function ProfileScreen() {
       {/* İstatistikler */}
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
-          <Text style={styles.statValue}>{streak}</Text>
+          <AnimatedCounter value={streak} style={styles.statValue} />
           <Text style={styles.statLabel}>🔥 Seri</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statValue}>{stats.totalCompletions || 0}</Text>
+          <AnimatedCounter value={stats.totalCompletions || 0} style={styles.statValue} />
           <Text style={styles.statLabel}>✅ Tamamlama</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statValue}>{stats.totalXp}</Text>
+          <AnimatedCounter value={stats.totalXp} style={styles.statValue} />
           <Text style={styles.statLabel}>⚡ XP</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statValue}>{stats.gold || 0}</Text>
+          <AnimatedCounter value={stats.gold || 0} style={styles.statValue} />
           <Text style={styles.statLabel}>🪙 Altın</Text>
         </View>
+      </View>
+
+      {/* İstatistik özeti kartı */}
+      <View style={styles.summaryCard}>
+        <View style={styles.xpRow}>
+          <View style={styles.xpTexts}>
+            <Text style={styles.xpLabel}>
+              Seviye {levelInfo.level} → {levelInfo.level + 1}
+            </Text>
+            <Text style={styles.xpSub}>
+              {levelInfo.curXp}/{levelInfo.nextThreshold} XP
+            </Text>
+          </View>
+          <Text style={styles.xpValue}>%{xpPct}</Text>
+        </View>
+        <View style={styles.xpTrack}>
+          <View style={[styles.xpFill, { width: `${xpPct}%` }]} />
+        </View>
+
+        <View style={styles.summaryGrid}>
+          <View style={styles.summaryCell}>
+            <Text style={styles.summaryEmoji}>📅</Text>
+            <Text style={styles.summaryCellValue}>{habits.length}</Text>
+            <Text style={styles.summaryCellLabel}>Aktif alışkanlık</Text>
+          </View>
+          <View style={styles.summaryCell}>
+            <Text style={styles.summaryEmoji}>🎯</Text>
+            <Text style={styles.summaryCellValue}>
+              {doneToday}/{habits.length || 0}
+            </Text>
+            <Text style={styles.summaryCellLabel}>Bugün tamamlanan</Text>
+          </View>
+          <View style={styles.summaryCell}>
+            <Text style={styles.summaryEmoji}>🍅</Text>
+            <Text style={styles.summaryCellValue}>{stats.pomodoroCount || 0}</Text>
+            <Text style={styles.summaryCellLabel}>Odak seansı</Text>
+          </View>
+          <View style={styles.summaryCell}>
+            <Text style={styles.summaryEmoji}>🏆</Text>
+            <Text style={styles.summaryCellValue}>
+              {unlockedCount}/{ACHIEVEMENTS.length}
+            </Text>
+            <Text style={styles.summaryCellLabel}>Başarım</Text>
+          </View>
+        </View>
+
+        <PressableFX
+          style={[styles.achBtn, { borderColor: C.primary + '55' }]}
+          onPress={() => navigation.navigate('Achievements')}
+        >
+          <Text style={styles.achBtnText}>🏆 Tüm başarımları gör →</Text>
+        </PressableFX>
       </View>
 
       {/* Eylemler */}
@@ -237,6 +295,88 @@ function makeStyles(C) {
       flexDirection: 'row',
       gap: 10,
       marginTop: 16,
+    },
+    summaryCard: {
+      marginTop: 12,
+      backgroundColor: C.surface,
+      borderRadius: 16,
+      padding: 16,
+    },
+    xpRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    xpTexts: {
+      gap: 2,
+    },
+    xpLabel: {
+      color: C.text,
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    xpSub: {
+      color: C.textMuted,
+      fontSize: 12,
+    },
+    xpValue: {
+      color: C.xp,
+      fontSize: 18,
+      fontWeight: '800',
+    },
+    xpTrack: {
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: C.surfaceLight,
+      overflow: 'hidden',
+      marginTop: 10,
+    },
+    xpFill: {
+      height: '100%',
+      borderRadius: 4,
+      backgroundColor: C.xp,
+    },
+    summaryGrid: {
+      flexDirection: 'row',
+      marginTop: 16,
+      gap: 10,
+    },
+    summaryCell: {
+      flex: 1,
+      alignItems: 'center',
+      backgroundColor: C.surfaceLight,
+      borderRadius: 12,
+      paddingVertical: 12,
+      gap: 2,
+    },
+    summaryEmoji: {
+      fontSize: 16,
+    },
+    summaryCellValue: {
+      color: C.text,
+      fontSize: 16,
+      fontWeight: '800',
+    },
+    summaryCellLabel: {
+      color: C.textMuted,
+      fontSize: 10,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    achBtn: {
+      marginTop: 14,
+      borderRadius: 12,
+      borderWidth: 1,
+      alignItems: 'center',
+      paddingVertical: 10,
+    },
+    achBtnPressed: {
+      opacity: 0.7,
+    },
+    achBtnText: {
+      color: C.text,
+      fontSize: 13,
+      fontWeight: '700',
     },
     statCard: {
       flex: 1,

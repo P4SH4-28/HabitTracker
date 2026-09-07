@@ -21,7 +21,15 @@ const REMINDER_CHANNEL_ID = 'daily-reminder';
 const MOTIVATION_CHANNEL_ID = 'hourly-motivation';
 const IDS_STORAGE_KEY = '@habit_notif_ids';
 const REMINDER_TITLE = '⏰ Habit Tracker';
-const REMINDER_BODY = 'Bugünkü alışkanlıklarını işaretlemeyi unutma!';
+
+// Günlük hatırlatmanın gövde metnini, planlama anındaki bekleyen görev
+// sayısına göre üretir. pendingCount null ise (dışarıdan bilgi yoksa)
+// genel hatırlatma metni kullanılır.
+function buildDailyBody(pendingCount) {
+  if (pendingCount == null) return 'Bugünkü alışkanlıklarını işaretlemeyi unutma!';
+  if (pendingCount <= 0) return 'Tebrikler, bugün tüm alışkanlıklarını tamamladın! 🎉';
+  return `Bugün ${pendingCount} alışkanlık kaldı — hızlıca işaretle! 🔥`;
+}
 
 // Planlanan bildirim id'leri: { reminder: string|null, hourly: string|null }.
 async function loadIds() {
@@ -89,7 +97,9 @@ export async function ensureNotificationPermission() {
 // Saat verildiğinde (0-23) her gün tekrarlayan hatırlatmayı planlar.
 // Önce ESKİ hatırlatma iptal edilir (saatlik plan bozulmaz) → saat
 // değişince yığın oluşmaz.
-export async function scheduleDailyReminder(hour) {
+// pendingCount: o an bekleyen (tamamlanmamış) alışkanlık sayısı;
+// bildirim gövde metnini güncel tutmak için verilir.
+export async function scheduleDailyReminder(hour, pendingCount) {
   try {
     await ensureChannels();
     const ids = await loadIds();
@@ -99,9 +109,9 @@ export async function scheduleDailyReminder(hour) {
     const id = await Notifications.scheduleNotificationAsync({
       content: {
         title: REMINDER_TITLE,
-        body: REMINDER_BODY,
+        body: buildDailyBody(pendingCount),
         sound: 'default',
-        data: { type: 'habit-reminder' },
+        data: { type: 'habit-reminder', pending: pendingCount },
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,

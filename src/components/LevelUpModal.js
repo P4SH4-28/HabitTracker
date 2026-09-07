@@ -3,10 +3,16 @@
 // DataContext'teki "levelUpEvent" her seviye atlayışında dolar;
 // bu bileşen onu algılayıp animasyonlu bir kutlama gösterir.
 // Hangi sekmede olursan ol çalışır (App.js kökünde render edilir).
+// - Açılışta konfeti patlar (modal içindeki Confetti, source: levelup).
+// - Kart spring ile büyür, seviye numarası nabız (glow) animasyonu yapar.
+// - Cihazda haptik (success) bildirimi verilir.
 // ============================================================
 import { useEffect, useMemo, useRef } from 'react';
-import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import { Animated, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import Confetti from './Confetti';
 import { useData } from '../context/DataContext';
+import { celebrate } from '../services/effects';
 import { useTheme } from '../theme';
 
 export default function LevelUpModal() {
@@ -18,11 +24,20 @@ export default function LevelUpModal() {
   // Kart animasyonu: görünür olduğunda sıçrama (spring) ile büyür.
   const scale = useRef(new Animated.Value(0.5)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+  // Seviye numarası çevresindeki altın halka nabzı.
+  const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (!visible) return;
     scale.setValue(0.5);
     opacity.setValue(0);
+    pulse.setValue(0);
+    // Cihazda kısa kutlama titreşimi (web'de etkisizdir).
+    if (Platform.OS !== 'web') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    }
+    // Konfeti: modal katmanının İÇİNDE patlar (native Modal her şeyin üstündedir).
+    celebrate({ source: 'levelup' });
     Animated.parallel([
       Animated.spring(scale, {
         toValue: 1,
@@ -35,16 +50,42 @@ export default function LevelUpModal() {
         duration: 250,
         useNativeDriver: true,
       }),
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulse, {
+            toValue: 1,
+            duration: 900,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulse, {
+            toValue: 0,
+            duration: 900,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start(),
     ]).start();
-  }, [visible, scale, opacity]);
+  }, [visible, scale, opacity, pulse]);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={dismissLevelUp}>
       <View style={styles.backdrop}>
-        <Animated.View
-          style={[styles.card, { opacity, transform: [{ scale }] }]}
-        >
-          <Text style={styles.confetti}>🎉 ⭐ ✨</Text>
+        <Animated.View style={[styles.card, { opacity, transform: [{ scale }] }]}>
+          {/* Altın nabız halkası */}
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.glowRing,
+              {
+                opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.75] }),
+                transform: [
+                  {
+                    scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.15] }),
+                  },
+                ],
+              },
+            ]}
+          />
           <Text style={styles.label}>SEVİYE ATLADIN!</Text>
           <Text style={styles.bigLevel}>{levelUpEvent?.level}</Text>
           <Text style={styles.subtitle}>
@@ -55,6 +96,8 @@ export default function LevelUpModal() {
             <Text style={styles.buttonText}>Devam Et</Text>
           </Pressable>
         </Animated.View>
+        {/* Modal katmanı içinde konfeti (Level 1 kök overlayi bunu tekrarlamaz). */}
+        <Confetti filter={(s) => s === 'levelup'} />
       </View>
     </Modal>
   );
@@ -79,10 +122,15 @@ function makeStyles(C) {
       maxWidth: 360,
       borderWidth: 1,
       borderColor: C.gold,
+      overflow: 'hidden',
     },
-    confetti: {
-      fontSize: 40,
-      marginBottom: 12,
+    glowRing: {
+      position: 'absolute',
+      height: 210,
+      width: 210,
+      borderRadius: 105,
+      borderWidth: 2,
+      borderColor: C.gold,
     },
     label: {
       color: C.gold,

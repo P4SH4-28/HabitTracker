@@ -2,9 +2,11 @@
 // Heatmap — Son 5 haftanın tamamlama yoğunluğu (GitHub tarzı ısı haritası)
 // Her hücre bir günü temsil eder; renk koyulaştıkça o gün tamamlanan
 // alışkanlık oranı artar. Veri: ProgressScreen'in merkezi "daily" dizisi.
+// GUI modernizasyonu (Faz C): veri değişince hücreler soldan sağa
+// kademeli (cascade) belirir; bugün hücresi nabız atar.
 // ============================================================
-import { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef } from 'react';
+import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../theme';
 
 // Hex renk kodunu ("#22D3A5") istenen şeffaflıkta rgba'ya çevirir.
@@ -20,6 +22,36 @@ export default function Heatmap({ daily }) {
   const styles = useMemo(() => makeStyles(C), [C]);
   // Son 35 günü al (5 hafta).
   const cells = daily.slice(-35);
+
+  const reveal = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  // Veri değişince hücreler kademeli belirir.
+  useEffect(() => {
+    reveal.setValue(0);
+    const a = Animated.timing(reveal, {
+      toValue: 1,
+      duration: 650,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+    a.start();
+    return () => a.stop();
+  }, [reveal, daily]);
+
+  // Bugün hücresi için sürekli nabız animasyonu.
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 900, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+
+  const todayIndex = cells.length - 1;
 
   return (
     <View style={styles.card}>
@@ -38,20 +70,44 @@ export default function Heatmap({ daily }) {
         </View>
       </View>
       <View style={styles.grid}>
-        {cells.map(({ key, done, pct }) => (
-          <View
-            key={key}
-            style={[
-              styles.cell,
-              {
-                backgroundColor:
-                  done > 0
-                    ? hexToRgba(C.accent, 0.25 + pct * 0.75)
-                    : C.surfaceLight,
-              },
-            ]}
-          />
-        ))}
+        {cells.map(({ key, done, pct }, i) => {
+          const isToday = i === todayIndex;
+          const band = i / cells.length;
+          const opacity = reveal.interpolate({
+            inputRange: [Math.max(0, band - 0.12), band + 0.08],
+            outputRange: [0, 1],
+            extrapolate: 'clamp',
+          });
+          return (
+            <Animated.View
+              key={key}
+              style={[
+                styles.cell,
+                {
+                  opacity,
+                  transform: [
+                    {
+                      scale: reveal.interpolate({
+                        inputRange: [Math.max(0, band - 0.12), band + 0.08],
+                        outputRange: [0.5, 1],
+                        extrapolate: 'clamp',
+                      }),
+                    },
+                  ],
+                  backgroundColor:
+                    done > 0 ? hexToRgba(C.accent, 0.25 + pct * 0.75) : C.surfaceLight,
+                },
+                isToday && done > 0 && {
+                  transform: [
+                    {
+                      scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.25] }),
+                    },
+                  ],
+                },
+              ]}
+            />
+          );
+        })}
       </View>
     </View>
   );

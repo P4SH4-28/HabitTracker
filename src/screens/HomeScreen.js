@@ -8,30 +8,56 @@
 // "today" değeri DataContext'ten gelir; gece yarısı geçince ekran
 // otomatik yeni güne geçer (bayat "bugün" durumu yaşanmaz).
 // ============================================================
-import { useMemo, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import AddHabitModal from '../components/AddHabitModal';
+import AnimatedCounter from '../components/AnimatedCounter';
 import AvatarCircle from '../components/AvatarCircle';
-import HabitCard from '../components/HabitCard';
+import memoizedHabitCard from '../components/memoizedHabitCard';
 import NotificationBell from '../components/NotificationBell';
 import PomodoroTimer from '../components/PomodoroTimer';
+import PressableFX from '../components/PressableFX';
+import Sheet from '../components/Sheet';
 import XpBar from '../components/XpBar';
 import { useData } from '../context/DataContext';
 import { canClaimQuest, getDailyQuests, questClaimedToday } from '../data/quests';
-import { DAILY_XP_CAP, levelFromTotalXp, MAX_ACTIVE_HABITS } from '../logic';
+import { STARTER_HABITS } from '../data/starterHabits';
+import {
+  bestStreak,
+  DAILY_XP_CAP,
+  levelFromTotalXp,
+  MAX_ACTIVE_HABITS,
+} from '../logic';
 import { useTheme } from '../theme';
 
 export default function HomeScreen() {
   const { colors: C } = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
-  const { data, today, toggleHabit, deleteHabit, addHabit, refreshServer, refreshing } =
+  const { data, today, toggleHabit, deleteHabit, addHabit, refreshServer, refreshing, pushToast } =
     useData();
   const navigation = useNavigation();
   const { habits, stats, settings } = data;
   // Seviye bilgisi toplam XP'den türetilir (bkz. logic.js).
   const levelInfo = levelFromTotalXp(stats.totalXp);
   const [modalVisible, setModalVisible] = useState(false);
+  // Silme onayı: uzun basınca anında silinmez; önce alt-sheet onayı sorulur.
+  const [deleteTarget, setDeleteTarget] = useState(null);
+
+  const confirmDelete = useCallback(
+    (id) => {
+      const h = habits.find((x) => x.id === id);
+      if (h) setDeleteTarget(h);
+    },
+    [habits]
+  );
+
+  const doDelete = useCallback(() => {
+    if (!deleteTarget) return;
+    deleteHabit(deleteTarget.id);
+    pushToast({ icon: '🗑️', title: `${deleteTarget.name} silindi`, color: C.danger });
+    setDeleteTarget(null);
+  }, [deleteTarget, deleteHabit, C.danger, pushToast]);
 
   // Görev özeti: bugün bitirilen görev sayısı + şu an ödülü hazır olanlar.
   // Görevler her gün havuzdan yeniden seçilir ve günde bir kez alınır.
@@ -50,8 +76,23 @@ export default function HomeScreen() {
   const doneToday = habits.filter((h) => h.completedDates.includes(today)).length;
   const total = habits.length;
   const pct = total > 0 ? doneToday / total : 0;
+  const bestStreakValue = bestStreak(habits, today);
+  const todayXp = stats.day?.key === today ? stats.day.xpEarned || 0 : 0;
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Günaydın' : hour < 18 ? 'İyi günler' : 'İyi akşamlar';
+
+  // Hızlı başlangıç: boş ekrandaki önerilen alışkanlığı tek dokunuşla ekle.
+  const quickAdd = useCallback(
+    (h) => {
+      addHabit(h.name, h.emoji, h.color);
+      pushToast({
+        icon: h.emoji,
+        title: `${h.name} eklendi! Bugünkü hedefin hazır.`,
+        color: h.color,
+      });
+    },
+    [addHabit, pushToast]
+  );
 
   // Liste başlığı: karşılama (avatar + altın), XP çubuğu, pomodoro, ilerleme
   const header = (
@@ -78,7 +119,7 @@ export default function HomeScreen() {
           />
           <View style={styles.goldChip}>
             <Text style={styles.goldIcon}>🪙</Text>
-            <Text style={styles.goldText}>{stats.gold || 0}</Text>
+            <AnimatedCounter value={stats.gold || 0} style={styles.goldText} />
           </View>
         </View>
       </View>
@@ -91,7 +132,7 @@ export default function HomeScreen() {
           todayCap={DAILY_XP_CAP}
         />
       </View>
-      <Pressable style={styles.questCard} onPress={() => navigation.navigate('QuestBoard')}>
+      <PressableFX style={styles.questCard} onPress={() => navigation.navigate('QuestBoard')}>
         <View style={styles.questCardTop}>
           <Text style={styles.questCardTitle}>🎯 Günün Görevleri</Text>
           {questSummary.readyCount > 0 ? (
@@ -110,7 +151,7 @@ export default function HomeScreen() {
             : 'Henüz görev bitirmedin'}{' '}
           • Görevler her gün sıfırlanır →
         </Text>
-      </Pressable>
+      </PressableFX>
       <PomodoroTimer />
       <View style={styles.todayCard}>
         <View style={styles.todayHeader}>
@@ -120,6 +161,28 @@ export default function HomeScreen() {
         <View style={styles.todayTrack}>
           <View style={[styles.todayFill, { width: `${pct * 100}%` }]} />
         </View>
+        {/* Özet bloğu: en uzun seri · bugün XP · tamamlanan */}
+        <View style={styles.summaryRow}>
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryIcon}>🔥</Text>
+            <AnimatedCounter value={bestStreakValue} style={styles.summaryValue} />
+            <Text style={styles.summaryLabel}>En uzun seri</Text>
+          </View>
+          <View style={styles.summaryDivider} />
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryIcon}>⚡</Text>
+            <AnimatedCounter value={todayXp} style={styles.summaryValue} />
+            <Text style={styles.summaryLabel}>Bugün XP</Text>
+          </View>
+          <View style={styles.summaryDivider} />
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryIcon}>✅</Text>
+            <Text style={styles.summaryValue}>
+              <AnimatedCounter value={doneToday} style={styles.summaryValue} />/{total}
+            </Text>
+            <Text style={styles.summaryLabel}>Tamamlanan</Text>
+          </View>
+        </View>
         <Text style={styles.todayHint}>
           Alışkanlık başına +{settings.xpPerHabit} XP kazanırsın
         </Text>
@@ -128,13 +191,16 @@ export default function HomeScreen() {
     </View>
   );
 
+  const itemHeight = 78; // habit card fixed height
+
   return (
     <View style={styles.container}>
       <FlatList
         data={habits}
         keyExtractor={(item) => item.id}
+        getItemLayout={(item, index) => `x=${styles.listContent.left} y=${index * itemHeight} width=${styles.listContent.itemWidth} height=${itemHeight}`}
         renderItem={({ item }) => (
-          <HabitCard habit={item} today={today} onToggle={toggleHabit} onDelete={deleteHabit} />
+          <memoizedHabitCard habit={item} today={today} onToggle={toggleHabit} onDelete={confirmDelete} />
         )}
         ListHeaderComponent={header}
         contentContainerStyle={styles.listContent}
@@ -150,19 +216,13 @@ export default function HomeScreen() {
           />
         }
         ListEmptyComponent={
-          <View style={styles.emptyBox}>
-            <Text style={styles.emptyEmoji}>🌱</Text>
-            <Text style={styles.emptyTitle}>Henüz alışkanlık yok</Text>
-            <Text style={styles.emptyText}>
-              + butonuna dokunup ilk alışkanlığını ekle. Her tamamlama sana XP kazandırır!
-            </Text>
-          </View>
+          <EmptyState C={C} styles={styles} onQuickAdd={quickAdd} />
         }
       />
       {/* Yeni alışkanlık ekleme butonu (FAB) */}
-      <Pressable style={styles.fab} onPress={() => setModalVisible(true)}>
+      <PressableFX style={styles.fab} scale={0.9} haptic onPress={() => setModalVisible(true)}>
         <Text style={styles.fabIcon}>+</Text>
-      </Pressable>
+      </PressableFX>
       <AddHabitModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
@@ -170,6 +230,81 @@ export default function HomeScreen() {
         habitsCount={habits.length}
         maxHabits={MAX_ACTIVE_HABITS}
       />
+      {/* Silme onayı: alt-sheet (anında silinme riskine karşı) */}
+      <Sheet
+        visible={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Alışkanlığı Sil"
+      >
+        <Text style={styles.confirmText}>
+          "{deleteTarget?.name}" silinecek. Bu alışkanlığın serisi ve tamamlama geçmişi
+          kaldırılır; işlem geri alınamaz.
+        </Text>
+        <View style={styles.confirmRow}>
+          <PressableFX
+            style={[styles.confirmBtn, { backgroundColor: C.surfaceLight }]}
+            onPress={() => setDeleteTarget(null)}
+          >
+            <Text style={styles.confirmBtnMuted}>Vazgeç</Text>
+          </PressableFX>
+          <PressableFX
+            style={[styles.confirmBtn, { backgroundColor: C.danger }]}
+            onPress={doDelete}
+          >
+            <Text style={styles.confirmBtnDanger}>Sil</Text>
+          </PressableFX>
+        </View>
+      </Sheet>
+    </View>
+  );
+}
+
+// Boş durum: kullanıcıyı tek dokunuşla başlatmak için zıplayan 🌱
+// ve hazır "Hızlı başlangıç" alışkanlık çipleri gösterir.
+function EmptyState({ C, styles, onQuickAdd }) {
+  const bounce = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(bounce, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(bounce, { toValue: 0, duration: 700, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [bounce]);
+
+  return (
+    <View style={styles.emptyBox}>
+      <Animated.Text
+        style={[
+          styles.emptyEmoji,
+          {
+            transform: [
+              { translateY: bounce.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, -20, 0] }) },
+            ],
+          },
+        ]}
+      >
+        🌱
+      </Animated.Text>
+      <Text style={styles.emptyTitle}>İlk alışkanlığını ekle</Text>
+      <Text style={styles.emptyText}>
+        Hazır bir başlangıç seç veya + butonuna dokun. Her tamamlama XP + altın kazandırır!
+      </Text>
+      <View style={styles.starterWrap}>
+        {STARTER_HABITS.map((h) => (
+          <PressableFX
+            key={h.name}
+            style={[styles.starterChip, { borderColor: h.color + '66' }]}
+            onPress={() => onQuickAdd(h)}
+          >
+            <Text style={styles.starterEmoji}>{h.emoji}</Text>
+            <Text style={styles.starterChipText}>{h.name}</Text>
+          </PressableFX>
+        ))}
+      </View>
     </View>
   );
 }
@@ -284,6 +419,35 @@ function makeStyles(C) {
       justifyContent: 'space-between',
       alignItems: 'center',
     },
+    summaryRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: 4,
+    },
+    summaryItem: {
+      flex: 1,
+      alignItems: 'center',
+      gap: 1,
+    },
+    summaryIcon: {
+      fontSize: 16,
+    },
+    summaryValue: {
+      color: C.text,
+      fontSize: 16,
+      fontWeight: '800',
+    },
+    summaryLabel: {
+      color: C.textMuted,
+      fontSize: 10,
+      fontWeight: '600',
+    },
+    summaryDivider: {
+      width: 1,
+      height: 26,
+      backgroundColor: C.border,
+    },
     todayTitle: {
       color: C.text,
       fontSize: 14,
@@ -365,6 +529,59 @@ function makeStyles(C) {
       fontSize: 13,
       textAlign: 'center',
       lineHeight: 20,
+    },
+    confirmText: {
+      color: C.text,
+      fontSize: 14,
+      lineHeight: 21,
+    },
+    confirmRow: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    confirmBtn: {
+      flex: 1,
+      borderRadius: 12,
+      paddingVertical: 12,
+      alignItems: 'center',
+    },
+    confirmBtnMuted: {
+      color: C.text,
+      fontWeight: '700',
+    },
+    confirmBtnDanger: {
+      color: '#fff',
+      fontWeight: '800',
+    },
+    starterWrap: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'center',
+      gap: 10,
+      marginTop: 22,
+      maxWidth: 340,
+    },
+    starterChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: C.surface,
+      borderRadius: 14,
+      borderWidth: 1,
+      paddingHorizontal: 14,
+      paddingVertical: 9,
+    },
+    starterChipPressed: {
+      opacity: 0.7,
+      transform: [{ scale: 0.97 }],
+    },
+    starterEmoji: {
+      fontSize: 18,
+    },
+    starterChipText: {
+      color: C.text,
+      fontSize: 13,
+      fontWeight: '700',
     },
   });
 }

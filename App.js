@@ -6,9 +6,9 @@ import {
   NavigationContainer,
 } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { StatusBar } from 'expo-status-bar';
+import { enableScreens } from 'react-native-screens';
 import { useMemo, useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Linking, StyleSheet, Text, View } from 'react-native';
+import { Linking, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { DataProvider, useData } from './src/context/DataContext';
@@ -21,8 +21,10 @@ import AppMenu from './src/components/AppMenu';
 import ErrorBoundary, { FatalErrorView } from './src/components/ErrorBoundary';
 import AchievementToast from './src/components/AchievementToast';
 import BackgroundPattern from './src/components/BackgroundPattern';
+import Confetti from './src/components/Confetti';
 import LevelUpModal from './src/components/LevelUpModal';
 import Onboarding from './src/components/Onboarding';
+import SplashSkeleton from './src/components/SplashSkeleton';
 import TopBar from './src/components/TopBar';
 import AuthScreen from './src/screens/AuthScreen';
 import AchievementsScreen from './src/screens/AchievementsScreen';
@@ -40,6 +42,7 @@ import ShopScreen from './src/screens/ShopScreen';
 import SocialScreen from './src/screens/SocialScreen';
 import TeamScreen from './src/screens/TeamScreen';
 import { resolveTheme, ThemeProvider, useTheme } from './src/theme';
+import { useNavigation } from '@react-navigation/native';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -133,6 +136,12 @@ function TabNavigator() {
             />
           );
         },
+        // Android/iOS transition optimization via react-native-screens
+        // presentation: 'transparent' stack'lerde arka plana karışmaması sağlar.
+        presentation: 'card',
+        animationEnabled: true,
+        // iOS'un navigationBar interpolator için smooth animation
+        transitionsEnabled: true,
       })}
     >
       <Tab.Screen
@@ -173,7 +182,15 @@ function RootNavigator() {
       screenOptions={{
         headerShown: true,
         header: (props) => <AppHeader {...props} />,
-        contentStyle: { backgroundColor: 'transparent' },
+        // liftGestureEnabled: iOS'un swipe geri alma gesturesini etkinleştirir
+        // presentation: transparent background'lar için
+        presentation: 'card',
+        // Android'e özgü geçiş animasyonları
+        animationEnabled: true,
+        // Header title animasyonu
+        headerTintColor: 'white',
+        headerTitleStyle: { color: 'white' },
+        headerBackTitleStyle: { color: 'white' },
       }}
     >
       <Stack.Screen name="Main" component={TabNavigator} options={{ headerShown: false }} />
@@ -210,6 +227,9 @@ function useDeepLink(onPomodoroStart, onDuelCreate) {
 }
 
 const navigationRef = createNavigationContainerRef();
+// react-native-screens: enableScreens' iPhone/X ve newer cihazlarda
+// performans için GPU hızlandırmayı etkinleştirir.
+enableScreens();
 
 function Root() {
   const { data, loading, server, startPomodoro, claimQuest } = useData();
@@ -273,9 +293,9 @@ function Root() {
 
   if (loading) {
     return (
-      <View style={[styles.splash, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
+      <ThemeProvider value={{ colors }}>
+        <SplashSkeleton />
+      </ThemeProvider>
     );
   }
 
@@ -324,6 +344,9 @@ function Root() {
               Toast: başarım/pomodoro bildirimleri. Modal: seviye atlama kutlaması. */}
           <AchievementToast />
           <LevelUpModal />
+          {/* Genel kutlamalar (seri kilometre taşı vb.). Level-up konfetisi modal
+              katmanının içinde patlar; bu overlay onu tekrarlamaz. */}
+          <Confetti filter={(s) => s !== 'levelup'} />
           {/* İlk açılış rehberi: yalnızca ilk girişte, admin hesabına gösterilmez. */}
           {!authUser?.isAdmin ? <Onboarding /> : null}
         </View>
@@ -382,10 +405,5 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
     lineHeight: 20,
-  },
-  splash: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });

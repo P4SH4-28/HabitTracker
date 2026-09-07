@@ -66,6 +66,8 @@ export default function LeaderboardScreen() {
   // Sıralama: canlı veri varsa (sen + arkadaşların) kullanılır;
   // yoksa önbellekteki sunucu listesi + arkadaşlar gösterilir.
   const entries = useMemo(() => {
+    // live leaderboard verisi varsa onu kullan;
+    // yoksa yerel player/ friend verisi + önbellek gösterilir.
     if (live?.ok) {
       return live.leaderboard.map((p) => ({
         id: p.id,
@@ -79,11 +81,12 @@ export default function LeaderboardScreen() {
         streak: 0,
         isMe: p.isCurrentUser,
         isFriend: !p.isCurrentUser,
-        // Katman 4: şüpheli kullanıcı bayrağı + 7 günlük XP trendi.
         flagged: !!p.flagged,
         xp7d: p.xp7d || 0,
       }));
     }
+    // Yerel hesaplama: players + friends birleştirilir.
+    // Her bir players objesi zaten id, name, xp, avatar, streak içerir.
     const poolIds = new Set(players.map((p) => p.id));
     const extraFriends = friends.filter(
       (f) => !poolIds.has(f.id) && f.name !== meName
@@ -92,7 +95,6 @@ export default function LeaderboardScreen() {
       {
         id: 'me',
         name: authUser?.name || 'Sen',
-        // Profil fotoğrafı: yüklenen fotoğraf, yoksa dükkan avatarın.
         emoji: getAvatarEmoji(data.settings.avatarId),
         avatarId: data.settings.avatarId,
         frameId: data.settings.frameId,
