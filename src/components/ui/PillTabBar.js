@@ -25,7 +25,7 @@ export default function PillTabBar({ state, descriptors, navigation }) {
         {
           paddingLeft: insets.left + 13,
           paddingRight: insets.right + 13,
-          paddingBottom: Math.max(insets.bottom, 10) + 2,
+          paddingBottom: Math.max(insets.bottom, 12) + 4,
         },
       ]}
     >
@@ -56,7 +56,7 @@ export default function PillTabBar({ state, descriptors, navigation }) {
 
             const color = focused ? '#FFFFFF' : C.textMuted;
             const glyph = options.tabBarIcon
-              ? options.tabBarIcon({ focused, color, size: 20 })
+              ? options.tabBarIcon({ focused, color, size: 18 })
               : null;
 
             return (
@@ -102,7 +102,7 @@ const styles = StyleSheet.create({
   },
   bar: {
     flex: 1,
-    borderRadius: 999,
+    borderRadius: 28,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.09)',
     backgroundColor: 'rgba(16,18,26,0.82)',
@@ -110,8 +110,9 @@ const styles = StyleSheet.create({
   },
   barInner: {
     flexDirection: 'row',
-    gap: 4,
-    padding: 5,
+    gap: 2,
+    paddingHorizontal: 4,
+    paddingVertical: 6,
   },
   itemWrap: {
     flex: 1,
@@ -119,18 +120,18 @@ const styles = StyleSheet.create({
   item: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 7,
-    paddingHorizontal: 8,
-    borderRadius: 999,
-    gap: 1,
+    paddingVertical: 5,
+    paddingHorizontal: 4,
+    borderRadius: 20,
+    gap: 2,
   },
   itemInner: {
-    height: 24,
+    height: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
   label: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '800',
   },
 });

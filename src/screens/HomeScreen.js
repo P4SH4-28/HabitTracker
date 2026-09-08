@@ -9,7 +9,7 @@
 // otomatik yeni güne geçer (bayat "bugün" durumu yaşanmaz).
 // ============================================================
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Animated, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import AddHabitModal from '../components/AddHabitModal';
@@ -25,6 +25,7 @@ import XpBar from '../components/XpBar';
 import Icon from '../components/ui/icons';
 import IconTile from '../components/ui/IconTile';
 import { useData } from '../context/DataContext';
+import { tap } from '../services/sfx';
 import { canClaimQuest, getDailyQuests, questClaimedToday } from '../data/quests';
 import { STARTER_HABITS } from '../data/starterHabits';
 import {
@@ -242,14 +243,19 @@ export default function HomeScreen() {
         }
       />
       {/* Yeni alışkanlık ekleme butonu (FAB) — gradient + indigo glow */}
-      <PressableFX style={styles.fab} scale={0.92} haptic onPress={() => setModalVisible(true)}>
+      <Pressable
+        style={styles.fab}
+        hitSlop={10}
+        onPress={() => setModalVisible(true)}
+        onPressIn={() => tap()}
+      >
         <LinearGradient
           colors={[C.primary, C.primaryDark]}
           style={styles.fabGradient}
         >
           <Text style={styles.fabIcon}>+</Text>
         </LinearGradient>
-      </PressableFX>
+      </Pressable>
       <AddHabitModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
