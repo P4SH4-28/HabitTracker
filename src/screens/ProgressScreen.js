@@ -24,6 +24,7 @@ import {
   weeklyComparison,
 } from '../logic';
 import { useTheme } from '../theme';
+import IconTile from '../components/ui/IconTile';
 
 export default function ProgressScreen() {
   const { colors: C } = useTheme();
@@ -95,7 +96,7 @@ export default function ProgressScreen() {
         </>
       ) : (
         <View style={styles.emptyBox}>
-          <Text style={styles.emptyEmoji}>📊</Text>
+          <IconTile icon="bar-chart" emoji="📊" variant="primary" size={60} iconSize={26} />
           <Text style={styles.emptyTitle}>Henüz veri yok</Text>
           <Text style={styles.emptyText}>
             Alışkanlık ekleyip tamamladıkça grafiklerin burada oluşacak.
@@ -138,12 +139,10 @@ function makeStyles(C) {
       alignItems: 'center',
       paddingVertical: 50,
       paddingHorizontal: 24,
-    },
-    emptyEmoji: {
-      fontSize: 44,
-      marginBottom: 12,
+      gap: 4,
     },
     emptyTitle: {
+      marginTop: 8,
       color: C.text,
       fontSize: 16,
       fontWeight: '700',

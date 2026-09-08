@@ -412,7 +412,7 @@ export default function SettingsScreen() {
 
       {/* Yönetici — yalnızca admin hesabıyla görünür */}
       {authUser?.isAdmin ? (
-        <Section title="🛡️ Yönetici">
+        <Section title="Yönetici">
           <SettingRow
             label="Yönetici Paneli"
             description="Kullanıcı ara, yasakla, ceza/ödül ver, hediye gönder"

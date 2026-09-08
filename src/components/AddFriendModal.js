@@ -15,6 +15,8 @@ import { useAuth } from '../context/AuthContext';
 import { searchProfiles, sendFriendRequest } from '../services/friendService';
 import { useTheme } from '../theme';
 import AvatarCircle from './AvatarCircle';
+import Icon from './ui/icons';
+import IconTile from './ui/IconTile';
 import Sheet from './Sheet';
 
 // Arkadaş ekleme akışı: Supabase'de kullanıcı adı arar, bulunan
@@ -70,12 +72,12 @@ export default function AddFriendModal({ visible, onClose }) {
       return;
     }
     if (res.state === 'already_friends') {
-      setFeedback({ name: username, text: 'Zaten arkadaşsınız ✓', ok: true });
+      setFeedback({ name: username, icon: '✅', ok: true, text: 'Zaten arkadaşsınız' });
       await refreshServer();
     } else if (res.state === 'already_pending') {
-      setFeedback({ name: username, text: 'İstek zaten beklemede ⏳', ok: true });
+      setFeedback({ name: username, icon: '⏳', ok: true, text: 'İstek zaten beklemede' });
     } else {
-      setFeedback({ name: username, text: 'İstek gönderildi ✓', ok: true });
+      setFeedback({ name: username, icon: '✅', ok: true, text: 'İstek gönderildi' });
     }
   };
 
@@ -117,7 +119,9 @@ export default function AddFriendModal({ visible, onClose }) {
                       <Text style={styles.rowName} numberOfLines={1}>
                         {r.username}
                       </Text>
-                      <Text style={styles.rowMeta}>⚡ {r.xp} XP</Text>
+                      <Text style={styles.rowMeta}>
+                        <Icon emoji="⚡" size={11} color={C.primary} /> {r.xp} XP
+                      </Text>
                     </View>
                     {friend ? (
                       <View style={[styles.tag, styles.tagDone]}>
@@ -144,7 +148,7 @@ export default function AddFriendModal({ visible, onClose }) {
               })}
           {!searching && searched && results.length === 0 && (
             <View style={styles.centerBox}>
-              <Text style={styles.emptyEmoji}>🔍</Text>
+              <IconTile icon="search" emoji="🔍" variant="primary" size={52} iconSize={22} />
               <Text style={styles.centerText}>Sonuç bulunamadı.</Text>
               <Text style={styles.centerSub}>
                 İsmin tam doğru yazıldığından ve kişinin uygulamaya giriş yaptığından emin ol.
@@ -155,7 +159,19 @@ export default function AddFriendModal({ visible, onClose }) {
 
         {feedback && (
           <View style={[styles.feedbackBox, !feedback.ok && { borderColor: C.danger }]}>
-            <Text style={[styles.feedbackText, !feedback.ok && { color: C.danger }]}>
+            {feedback.icon ? (
+              <Icon
+                emoji={feedback.icon}
+                size={13}
+                color={feedback.ok ? C.accent : C.danger}
+              />
+            ) : null}
+            <Text
+              style={[
+                styles.feedbackText,
+                !feedback.ok && { color: C.danger },
+              ]}
+            >
               {feedback.text}
             </Text>
           </View>
@@ -256,9 +272,6 @@ function makeStyles(C) {
       lineHeight: 18,
       paddingHorizontal: 16,
     },
-    emptyEmoji: {
-      fontSize: 30,
-    },
     feedbackBox: {
       marginTop: 10,
       borderRadius: 12,
@@ -266,12 +279,16 @@ function makeStyles(C) {
       borderColor: C.accent,
       backgroundColor: C.surfaceLight,
       padding: 10,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
     },
     feedbackText: {
       color: C.accent,
       fontSize: 13,
       fontWeight: '700',
       textAlign: 'center',
+      flex: 1,
     },
   });
 }

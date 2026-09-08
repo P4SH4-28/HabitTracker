@@ -12,6 +12,8 @@ import {
   computeAchievementState,
 } from '../data/achievements';
 import { useTheme } from '../theme';
+import Icon from '../components/ui/icons';
+import IconTile from '../components/ui/IconTile';
 
 // Sayısal başarımın ilerlemesi: { cur, target } döndürür (yoksa null).
 // Kilitli kartlarda çubuk ve "x/y" bu değerle çizilir.
@@ -69,14 +71,17 @@ export default function AchievementsScreen() {
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.summaryCard}>
-        <Text style={styles.summaryEmoji}>🏆</Text>
+        <IconTile icon="trophy" emoji="🏆" variant="gold" size={52} iconSize={24} />
         <View style={styles.summaryInfo}>
           <Text style={styles.summaryTitle}>
             {unlockedCount}/{ACHIEVEMENTS.length} başarım açıldı
           </Text>
-          <Text style={styles.summarySub}>
-            Açtığın başarımlar toplam {totalReward} 🪙 kazandırdı
-          </Text>
+          <View style={styles.summarySubRow}>
+            <Icon emoji="🪙" size={12} color={C.gold} />
+            <Text style={styles.summarySub}>
+              Açtığın başarımlar toplam {totalReward} kazandırdı
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -94,11 +99,9 @@ export default function AchievementsScreen() {
             ]}
           >
             <View style={styles.cardHeader}>
-              <View style={[styles.iconBox, unlocked && styles.iconBoxUnlocked]}>
-                <Text style={[styles.icon, !unlocked && styles.iconLocked]}>
-                  {unlocked ? a.icon : '🔒'}
-                </Text>
-              </View>
+            <View style={[styles.iconBox, unlocked && styles.iconBoxUnlocked]}>
+              <Icon emoji={unlocked ? a.icon : '🔒'} size={24} color={C.text} />
+            </View>
               <View style={styles.cardInfo}>
                 <Text style={[styles.title, unlocked && styles.titleUnlocked]}>
                   {a.title}
@@ -107,7 +110,8 @@ export default function AchievementsScreen() {
               </View>
               {unlocked ? (
                 <View style={styles.rewardChip}>
-                  <Text style={styles.rewardText}>+{a.reward} 🪙</Text>
+                  <Icon emoji="🪙" size={11} color={C.gold} />
+                  <Text style={styles.rewardText}>+{a.reward}</Text>
                 </View>
               ) : null}
             </View>
@@ -134,8 +138,9 @@ export default function AchievementsScreen() {
       })}
 
       <View style={styles.noteBox}>
+        <Icon emoji="💡" size={13} color={C.primary} style={styles.noteIcon} />
         <Text style={styles.noteText}>
-          💡 Başarımlar otomatik açılır ve açıldığında altın ödülü hemen
+          Başarımlar otomatik açılır ve açıldığında altın ödülü hemen
           envanterine eklenir — ekranın üstünde de kısa bir bildirim görürsün.
         </Text>
       </View>
@@ -165,12 +170,14 @@ function makeStyles(C) {
       padding: 14,
       marginBottom: 6,
     },
-    summaryEmoji: {
-      fontSize: 32,
-    },
     summaryInfo: {
       flex: 1,
       gap: 2,
+    },
+    summarySubRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
     },
     summaryTitle: {
       color: C.text,
@@ -211,12 +218,6 @@ function makeStyles(C) {
     iconBoxUnlocked: {
       backgroundColor: C.gold + '22',
     },
-    icon: {
-      fontSize: 24,
-    },
-    iconLocked: {
-      opacity: 0.6,
-    },
     cardInfo: {
       flex: 1,
       gap: 2,
@@ -235,6 +236,9 @@ function makeStyles(C) {
       lineHeight: 16,
     },
     rewardChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
       backgroundColor: C.gold + '22',
       borderRadius: 10,
       paddingHorizontal: 10,
@@ -274,12 +278,18 @@ function makeStyles(C) {
       fontSize: 12,
     },
     noteBox: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
       backgroundColor: C.surface,
       borderRadius: 14,
       borderWidth: 1,
       borderColor: C.border,
       padding: 14,
       marginTop: 6,
+    },
+    noteIcon: {
+      marginTop: 2,
     },
     noteText: {
       color: C.textMuted,

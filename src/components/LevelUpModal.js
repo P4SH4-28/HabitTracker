@@ -9,8 +9,10 @@
 // ============================================================
 import { useEffect, useMemo, useRef } from 'react';
 import * as Haptics from 'expo-haptics';
-import { Animated, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Modal, Platform, StyleSheet, Text, View } from 'react-native';
 import Confetti from './Confetti';
+import GradientButton from './GradientButton';
+import Icon from './ui/icons';
 import { useData } from '../context/DataContext';
 import { celebrate } from '../services/effects';
 import { useTheme } from '../theme';
@@ -88,13 +90,19 @@ export default function LevelUpModal() {
           />
           <Text style={styles.label}>SEVİYE ATLADIN!</Text>
           <Text style={styles.bigLevel}>{levelUpEvent?.level}</Text>
-          <Text style={styles.subtitle}>
-            Tebrikler! Artık <Text style={styles.highlight}>Seviye {levelUpEvent?.level}</Text>{' '}
-            oldun. 🚀
-          </Text>
-          <Pressable style={styles.button} onPress={dismissLevelUp}>
-            <Text style={styles.buttonText}>Devam Et</Text>
-          </Pressable>
+          <View style={styles.subtitleRow}>
+            <Text style={styles.subtitle}>
+              Tebrikler! Artık <Text style={styles.highlight}>Seviye {levelUpEvent?.level}</Text>{' '}
+              oldun.
+            </Text>
+            <Icon emoji="🚀" size={15} color={C.gold} />
+          </View>
+          <GradientButton
+            label="Devam Et"
+            onPress={dismissLevelUp}
+            glowColor={C.gold}
+            style={styles.button}
+          />
         </Animated.View>
         {/* Modal katmanı içinde konfeti (Level 1 kök overlayi bunu tekrarlamaz). */}
         <Confetti filter={(s) => s === 'levelup'} />
@@ -149,6 +157,13 @@ function makeStyles(C) {
       fontSize: 15,
       textAlign: 'center',
       lineHeight: 22,
+    },
+    subtitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      flexWrap: 'wrap',
       marginBottom: 24,
     },
     highlight: {
@@ -156,15 +171,7 @@ function makeStyles(C) {
       fontWeight: '700',
     },
     button: {
-      backgroundColor: C.primary,
-      paddingVertical: 14,
-      paddingHorizontal: 40,
-      borderRadius: 14,
-    },
-    buttonText: {
-      color: C.onPrimary,
-      fontSize: 16,
-      fontWeight: '700',
+      alignSelf: 'stretch',
     },
   });
 }

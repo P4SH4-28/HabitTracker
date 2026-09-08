@@ -9,6 +9,7 @@ import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from '
 import { useData } from '../context/DataContext';
 import { ITEMS, XP_BOOST_USES } from '../data/items';
 import { useTheme } from '../theme';
+import Icon from '../components/ui/icons';
 
 // Onay kutusu: mobilde Alert, web'de confirm.
 function confirmDialog(title, message, onOk) {
@@ -68,7 +69,7 @@ export default function InventoryScreen() {
           <Text style={styles.screenSub}>Eşyalarını buradan kullan</Text>
         </View>
         <View style={styles.balanceChip}>
-          <Text style={styles.balanceIcon}>🪙</Text>
+          <Icon emoji="🪙" size={16} color={C.gold} />
           <Text style={styles.balanceText}>{gold}</Text>
         </View>
       </View>
@@ -81,7 +82,7 @@ export default function InventoryScreen() {
             const text = effectText(item.id);
             return text ? (
               <View key={item.id} style={styles.activeRow}>
-                <Text style={styles.activeEmoji}>{item.emoji}</Text>
+                <Icon emoji={item.emoji} size={15} color={C.primary} />
                 <Text style={styles.activeText}>{text}</Text>
               </View>
             ) : null;
@@ -128,8 +129,9 @@ export default function InventoryScreen() {
       })}
 
       <View style={styles.noteBox}>
+        <Icon emoji="💡" size={13} color={C.primary} style={styles.noteIcon} />
         <Text style={styles.noteText}>
-          💡 Eşyalar Dükkan'dan altınla satın alınır. Etkiler sunucu gününe
+          Eşyalar Dükkan'dan altınla satın alınır. Etkiler sunucu gününe
           bağlıdır ve gün değişince yenilenir; XP Enerjisi hakkı bitene kadar
           bekler. Cezadan korunmak için Kalkan'ı gün içinde kullanmayı unutma!
         </Text>
@@ -174,9 +176,6 @@ function makeStyles(C) {
       borderRadius: 14,
       paddingHorizontal: 14,
       paddingVertical: 8,
-    },
-    balanceIcon: {
-      fontSize: 16,
     },
     balanceText: {
       color: C.gold,
@@ -276,11 +275,17 @@ function makeStyles(C) {
       color: C.textMuted,
     },
     noteBox: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
       backgroundColor: C.surface,
       borderRadius: 14,
       borderWidth: 1,
       borderColor: C.border,
       padding: 14,
+    },
+    noteIcon: {
+      marginTop: 2,
     },
     noteText: {
       color: C.textMuted,

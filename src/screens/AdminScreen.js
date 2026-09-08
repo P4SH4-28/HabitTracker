@@ -23,6 +23,7 @@ import { getShopItem, SHOP_ITEMS, FRAMES } from '../data/shop';
 import { THEMES } from '../theme';
 import { adminAction } from '../services/adminService';
 import { useTheme } from '../theme';
+import Icon from '../components/ui/icons';
 
 // Hediye kategorileri (sıralı sekme).
 const GRANT_TABS = [
@@ -154,14 +155,14 @@ export default function AdminScreen() {
     });
     setBusy('');
     if (!r.ok) {
-      if (r.error === 'insufficient_balance') {
-        return notify(false, `${from} hesabında yeterli bakiye yok (${r.balance?.xp ?? 0} XP / ${r.balance?.coins ?? 0} 🪙)`);
-      }
-      return notify(false, r.error);
+    if (r.error === 'insufficient_balance') {
+      return notify(false, `${from} hesabında yeterli bakiye yok (${r.balance?.xp ?? 0} XP / ${r.balance?.coins ?? 0} altın)`);
     }
-    setTransferXp('');
-    setTransferGold('');
-    notify(true, `${from} → ${to}: ${xp} XP + ${gold} 🪙 aktarıldı`);
+    return notify(false, r.error);
+  }
+  setTransferXp('');
+  setTransferGold('');
+  notify(true, `${from} → ${to}: ${xp} XP + ${gold} altın aktarıldı`);
     if (selected && (selected.username === from || selected.username === to)) {
       await refreshSelected();
     }
@@ -228,7 +229,10 @@ export default function AdminScreen() {
         contentContainerStyle={{ padding: 16, paddingBottom: 60 }}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.title}>🛡️ Yönetici Paneli</Text>
+        <View style={styles.titleRow}>
+          <Icon emoji="🛡️" size={18} color={C.primary} />
+          <Text style={styles.title}>Yönetici Paneli</Text>
+        </View>
         <Text style={styles.subtitle}>
           Tüm işlemler sunucuda denetlenir ve kayda geçer. Dikkatli kullan!
         </Text>
@@ -260,11 +264,22 @@ export default function AdminScreen() {
                 onPress={() => selectUser(u.username)}
               >
                 <Text style={styles.resultName}>{u.username}</Text>
-                <Text style={styles.resultMeta}>
-                  {u.xp} XP • 🪙 {u.coins}
-                  {u.banned ? ' • ⛔ BANLI' : ''}
-                  {u.flagged ? ' • ⚠️' : ''}
-                </Text>
+                <View style={styles.resultMeta}>
+                  <Text style={styles.resultMetaText}>{u.xp} XP</Text>
+                  <Icon emoji="🪙" size={11} color={C.gold} />
+                  <Text style={styles.resultMetaText}>{u.coins}</Text>
+                  {u.banned ? (
+                    <View style={styles.resultBadge}>
+                      <Icon emoji="⛔" size={11} color={C.danger} />
+                      <Text style={[styles.resultMetaText, { color: C.danger }]}>BANLI</Text>
+                    </View>
+                  ) : null}
+                  {u.flagged ? (
+                    <View style={styles.resultBadge}>
+                      <Icon emoji="⚠️" size={11} color={C.xp} />
+                    </View>
+                  ) : null}
+                </View>
               </Pressable>
             ))}
           </View>
@@ -272,9 +287,12 @@ export default function AdminScreen() {
 
         {/* ---------- İşlem geçmişi ---------- */}
         <Pressable style={styles.linkRow} onPress={loadLogs}>
-          <Text style={styles.linkText}>
-            {showLogs ? '📜 Denetim günlüğü (son 30 işlem)' : '📜 Denetim günlüğünü getir'}
-          </Text>
+          <View style={styles.linkContent}>
+            <Icon emoji="📜" size={13} color={C.primary} />
+            <Text style={styles.linkText}>
+              {showLogs ? 'Denetim günlüğü (son 30 işlem)' : 'Denetim günlüğünü getir'}
+            </Text>
+          </View>
         </Pressable>
         {showLogs && (
           <View style={styles.card}>
@@ -301,15 +319,20 @@ export default function AdminScreen() {
               <View style={styles.userHeader}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.userName}>{selected.username}</Text>
-                  <Text style={styles.userMeta}>
-                    {selected.xp} XP • 🪙 {selected.coins}
-                    {selected.xp7d ? ` • 7 gün: +${selected.xp7d} XP` : ''}
-                  </Text>
+                  <View style={styles.userMeta}>
+                    <Text style={styles.userMetaText}>{selected.xp} XP</Text>
+                    <Icon emoji="🪙" size={11} color={C.gold} />
+                    <Text style={styles.userMetaText}>{selected.coins}</Text>
+                    {selected.xp7d ? (
+                      <Text style={styles.userMetaText}>{`  •  7 gün: +${selected.xp7d} XP`}</Text>
+                    ) : null}
+                  </View>
                 </View>
                 <View style={styles.userChips}>
                   {selected.banned ? (
                     <View style={[styles.chip, { backgroundColor: C.danger }]}>
-                      <Text style={styles.chipText}>⛔ BANLI</Text>
+                      <Icon emoji="⛔" size={10} color="#fff" />
+                      <Text style={styles.chipText}>BANLI</Text>
                     </View>
                   ) : (
                     <View style={[styles.chip, { backgroundColor: '#2A3340' }]}>
@@ -318,7 +341,8 @@ export default function AdminScreen() {
                   )}
                   {selected.flagged && !selected.banned ? (
                     <View style={[styles.chip, { backgroundColor: C.xp }]}>
-                      <Text style={styles.chipText}>⚠️ ŞÜPHELİ</Text>
+                      <Icon emoji="⚠️" size={10} color="#fff" />
+                      <Text style={styles.chipText}>ŞÜPHELİ</Text>
                     </View>
                   ) : null}
                 </View>
@@ -348,20 +372,29 @@ export default function AdminScreen() {
                     onChangeText={setBanReason}
                   />
                   <Pressable style={[styles.dangerButton, busy === 'ban' && { opacity: 0.6 }]} onPress={doBan} disabled={busy !== ''}>
-                    <Text style={styles.dangerText}>⛔ Kullanıcıyı Yasakla</Text>
+                    <View style={styles.btnContent}>
+                      <Icon emoji="⛔" size={13} color={C.danger} />
+                      <Text style={styles.dangerText}>Kullanıcıyı Yasakla</Text>
+                    </View>
                   </Pressable>
                 </>
               ) : (
                 <>
                   <Text style={styles.muted}>Bu kullanıcı yasaklı — senkronu ve liderliği kapalı.</Text>
                   <Pressable style={[styles.primaryButton, busy === 'unban' && { opacity: 0.6 }]} onPress={doUnban} disabled={busy !== ''}>
-                    <Text style={styles.primaryButtonText}>✅ Yasağı Kaldır</Text>
+                    <View style={styles.btnContent}>
+                      <Icon emoji="✅" size={13} color={C.onPrimary} />
+                      <Text style={styles.primaryButtonText}>Yasağı Kaldır</Text>
+                    </View>
                   </Pressable>
                 </>
               )}
               {selected.flagged ? (
                 <Pressable style={[styles.secondaryButton, busy === 'unflag' && { opacity: 0.6 }]} onPress={doUnflag} disabled={busy !== ''}>
-                  <Text style={styles.secondaryText}>🧹 Şüpheli Bayrağını Kaldır</Text>
+                  <View style={styles.btnContent}>
+                    <Icon emoji="🧹" size={13} color={C.text} />
+                    <Text style={styles.secondaryText}>Şüpheli Bayrağını Kaldır</Text>
+                  </View>
                 </Pressable>
               ) : null}
             </View>
@@ -393,21 +426,28 @@ export default function AdminScreen() {
                   onPress={() => doAdjust(1)}
                   disabled={busy !== ''}
                 >
-                  <Text style={styles.giveButtonText}>🎁 Ödül Ver</Text>
+                  <Text style={styles.giveButtonText}>
+                    <Icon emoji="🎁" size={13} color={C.accent} /> Ödül Ver
+                  </Text>
                 </Pressable>
                 <Pressable
                   style={[styles.takeButton, busy === 'adjust' && { opacity: 0.6 }]}
                   onPress={() => doAdjust(-1)}
                   disabled={busy !== ''}
                 >
-                  <Text style={styles.takeButtonText}>⚖️ Ceza Kes</Text>
+                  <Text style={styles.takeButtonText}>
+                    <Icon emoji="⚖️" size={13} color={C.danger} /> Ceza Kes
+                  </Text>
                 </Pressable>
               </View>
             </View>
 
             {/* ---------- Para Transferi ---------- */}
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>💰 Para Transferi</Text>
+              <View style={styles.cardTitleRow}>
+                <Icon emoji="💰" size={14} color={C.gold} />
+                <Text style={styles.cardTitle}>Para Transferi</Text>
+              </View>
               <Text style={styles.muted}>
                 Kaynak hesaptan hedef hesaba XP ve altın aktarır (kaynak bakiyesi düşer).
               </Text>
@@ -451,7 +491,9 @@ export default function AdminScreen() {
                 onPress={doTransfer}
                 disabled={busy !== ''}
               >
-                <Text style={styles.giveButtonText}>↔️ Aktar</Text>
+                <Text style={styles.giveButtonText}>
+                  <Icon emoji="↔️" size={13} color={C.accent} /> Aktar
+                </Text>
               </Pressable>
             </View>
 
@@ -512,8 +554,12 @@ export default function AdminScreen() {
 
 const makeStyles = (C) =>
   StyleSheet.create({
-    title: { fontSize: 22, fontWeight: '800', color: C.text, marginBottom: 4 },
+    titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+    title: { fontSize: 22, fontWeight: '800', color: C.text },
     subtitle: { fontSize: 13, color: C.textMuted, marginBottom: 16 },
+    btnContent: { flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center' },
+    cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+    linkContent: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     searchRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
     input: {
       backgroundColor: C.surface,
@@ -570,7 +616,9 @@ const makeStyles = (C) =>
     },
     resultRowActive: { backgroundColor: 'rgba(124,92,255,0.12)', borderRadius: 8, paddingHorizontal: 8 },
     resultName: { fontSize: 15, fontWeight: '700', color: C.text },
-    resultMeta: { fontSize: 12, color: C.textMuted },
+    resultMeta: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    resultMetaText: { fontSize: 12, color: C.textMuted },
+    resultBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, marginLeft: 4 },
     linkRow: { marginBottom: 12 },
     linkText: { color: C.primary, fontWeight: '600', fontSize: 13 },
     logRow: { paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: C.border },
@@ -579,9 +627,17 @@ const makeStyles = (C) =>
     logDetail: { fontSize: 12, color: C.textMuted, marginTop: 2 },
     userHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     userName: { fontSize: 18, fontWeight: '800', color: C.text },
-    userMeta: { fontSize: 13, color: C.textMuted, marginTop: 2 },
+    userMeta: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
+    userMetaText: { fontSize: 13, color: C.textMuted },
     userChips: { flexDirection: 'row', gap: 6 },
-    chip: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
+    chip: {
+      borderRadius: 999,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
     chipText: { color: '#fff', fontSize: 11, fontWeight: '700' },
     banReason: { fontSize: 12, color: C.xp, marginTop: 8 },
     adjustRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },

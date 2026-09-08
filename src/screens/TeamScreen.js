@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../theme';
+import Icon from '../components/ui/icons';
 import AvatarCircle from '../components/AvatarCircle';
 import {
   createTeam,
@@ -167,9 +168,12 @@ export default function TeamScreen() {
             {/* Haftalık ortak hedef */}
             <View style={styles.goalCard}>
               <View style={styles.goalTop}>
-                <Text style={styles.goalTitle}>
-                  {goalDone ? '🎉 Haftalık hedef tamam!' : '🎯 Haftalık ortak hedef'}
-                </Text>
+                <View style={styles.goalTitleRow}>
+                  <Icon emoji={goalDone ? '🎉' : '🎯'} size={15} color={C.primary} />
+                  <Text style={styles.goalTitle}>
+                    {goalDone ? 'Haftalık hedef tamam!' : 'Haftalık ortak hedef'}
+                  </Text>
+                </View>
                 <Text style={styles.goalXp}>
                   {weeklyXp}/{WEEKLY_GOAL_XP} XP
                 </Text>
@@ -202,7 +206,10 @@ export default function TeamScreen() {
                 </Text>
                 <View style={styles.memberStats}>
                   <Text style={styles.memberXp7d}>{m.xp7d || 0} XP/7g</Text>
-                  <Text style={styles.memberStreak}>🔥 {m.streak || 0}</Text>
+                  <View style={styles.memberStreakRow}>
+                    <Icon emoji="🔥" size={10} color={C.accent} />
+                    <Text style={styles.memberStreak}>{m.streak || 0}</Text>
+                  </View>
                 </View>
               </View>
             ))}
@@ -212,8 +219,9 @@ export default function TeamScreen() {
           </View>
 
           <View style={styles.noteBox}>
+            <Icon emoji="💡" size={13} color={C.primary} style={styles.noteIcon} />
             <Text style={styles.noteText}>
-              💡 Takımın birlikte 1000 XP toplarsa hedef tamamlanır — arkadaşlarını
+              Takımın birlikte 1000 XP toplarsa hedef tamamlanır — arkadaşlarını
               takıma davet etmek için onlara takım adını söylemen yeterli.
             </Text>
           </View>
@@ -276,8 +284,9 @@ export default function TeamScreen() {
           </View>
 
           <View style={styles.noteBox}>
+            <Icon emoji="💡" size={13} color={C.primary} style={styles.noteIcon} />
             <Text style={styles.noteText}>
-              💡 Takım kurduğunda lider olursun; ayrılınca takım silinir. Herkes
+              Takım kurduğunda lider olursun; ayrılınca takım silinir. Herkes
               en fazla bir takımda olabilir ve takımın ortak haftalık hedefi
               üyelerin XP'sinden hesaplanır.
             </Text>
@@ -358,6 +367,11 @@ function makeStyles(C) {
       justifyContent: 'space-between',
       alignItems: 'center',
     },
+    goalTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
     goalTitle: {
       color: C.text,
       fontSize: 13,
@@ -426,6 +440,12 @@ function makeStyles(C) {
       color: C.textMuted,
       fontSize: 11,
       fontWeight: '700',
+    },
+    memberStreakRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+      marginTop: 2,
     },
     memberStreak: {
       color: C.textMuted,
@@ -538,11 +558,17 @@ function makeStyles(C) {
       padding: 12,
     },
     noteBox: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
       backgroundColor: C.surface,
       borderRadius: 14,
       borderWidth: 1,
       borderColor: C.border,
       padding: 14,
+    },
+    noteIcon: {
+      marginTop: 2,
     },
     noteText: {
       color: C.textMuted,

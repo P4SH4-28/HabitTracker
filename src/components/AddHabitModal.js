@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   StyleSheet,
   Text,
   TextInput,
@@ -11,6 +10,8 @@ import {
 import { useTheme } from '../theme';
 import ColorPicker from './ColorPicker';
 import EmojiPicker from './EmojiPicker';
+import GradientButton from './GradientButton';
+import Icon from './ui/icons';
 import Sheet from './Sheet';
 
 export default function AddHabitModal({ visible, onClose, onAdd, habitsCount = 0, maxHabits = 10 }) {
@@ -63,25 +64,28 @@ export default function AddHabitModal({ visible, onClose, onAdd, habitsCount = 0
         <ColorPicker value={color} onChange={setColor} />
         {limitReached && (
           <View style={styles.limitBox}>
-            <Text style={styles.limitText}>
-              ⛔ En fazla {maxHabits} alışkanlık oluşturabilirsin. Yeni eklemek için mevcut
-              birini sil.
-            </Text>
+            <View style={styles.limitRow}>
+              <Icon emoji="⛔" size={15} color={C.danger} />
+              <Text style={styles.limitText}>
+                En fazla {maxHabits} alışkanlık oluşturabilirsin. Yeni eklemek için mevcut
+                birini sil.
+              </Text>
+            </View>
           </View>
         )}
-        <Pressable
-          style={[
-            styles.button,
-            { backgroundColor: color },
-            (!name.trim() || limitReached) && styles.buttonDisabled,
-          ]}
+        <GradientButton
+          icon="✨"
+          label={
+            limitReached
+              ? `Limit doldu (${habitsCount}/${maxHabits})`
+              : 'Alışkanlığı Ekle'
+          }
+          colors={[color, color]}
+          glowColor={color}
           onPress={submit}
           disabled={!name.trim() || limitReached}
-        >
-          <Text style={styles.buttonText}>
-            {limitReached ? `Limit doldu (${habitsCount}/${maxHabits})` : 'Alışkanlığı Ekle'}
-          </Text>
-        </Pressable>
+          style={styles.button}
+        />
       </KeyboardAvoidingView>
     </Sheet>
   );
@@ -156,7 +160,13 @@ function makeStyles(C) {
       borderRadius: 12,
       padding: 12,
     },
+    limitRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+    },
     limitText: {
+      flex: 1,
       color: C.danger,
       fontSize: 12,
       lineHeight: 17,

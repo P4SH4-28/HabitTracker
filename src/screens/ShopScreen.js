@@ -18,7 +18,7 @@ import { Pressable } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import AnimatedCounter from '../components/AnimatedCounter';
 import AvatarCircle, { FrameDecor } from '../components/AvatarCircle';
-import memoizedAvatarCircle from '../components/memoizedAvatarCircle';
+import MemoizedAvatarCircle from '../components/memoizedAvatarCircle';
 import PressableFX from '../components/PressableFX';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
@@ -27,12 +27,14 @@ import { ITEMS } from '../data/items';
 import { pickProfilePhoto, removeProfilePhoto, uploadProfilePhoto } from '../services/avatarService';
 import { success } from '../services/sfx';
 import { THEMES, useTheme } from '../theme';
+import Icon from '../components/ui/icons';
+import IconTile from '../components/ui/IconTile';
 
 const TABS = [
-  { key: 'items', label: '🎒 Eşyalar' },
-  { key: 'avatars', label: '🧑‍🎤 Avatarlar' },
-  { key: 'frames', label: '💍 Çerçeveler' },
-  { key: 'themes', label: '🎨 Temalar' },
+  { key: 'items', icon: '🎒', label: 'Eşyalar' },
+  { key: 'avatars', icon: '🧑‍🎤', label: 'Avatarlar' },
+  { key: 'frames', icon: '💍', label: 'Çerçeveler' },
+  { key: 'themes', icon: '🎨', label: 'Temalar' },
 ];
 
 export default function ShopScreen() {
@@ -120,7 +122,7 @@ export default function ShopScreen() {
         </View>
         {/* Altın bakiyesi */}
         <View style={styles.balanceChip}>
-          <Text style={styles.balanceIcon}>🪙</Text>
+          <Icon emoji="🪙" size={14} color={C.gold} />
           <AnimatedCounter value={gold} style={styles.balanceText} />
         </View>
       </View>
@@ -136,7 +138,10 @@ export default function ShopScreen() {
               haptic
               onPress={() => setTab(t.key)}
             >
-              <Text style={[styles.tabChipText, active && styles.tabChipTextActive]}>{t.label}</Text>
+              <View style={styles.tabChipContent}>
+                <Icon emoji={t.icon} size={14} color={active ? C.onPrimary : C.textMuted} />
+                <Text style={[styles.tabChipText, active && styles.tabChipTextActive]}>{t.label}</Text>
+              </View>
             </PressableFX>
           );
         })}
@@ -167,9 +172,12 @@ export default function ShopScreen() {
           onPress={pickAndUpload}
           disabled={photoBusy}
         >
-          <Text style={styles.photoBtnText}>
-            {photoBusy ? '⏳ Yükleniyor…' : photoUrl ? '📷 Fotoğrafı Değiştir' : '📷 Fotoğraf Yükle'}
-          </Text>
+          <View style={styles.photoBtnContent}>
+            <Icon emoji={photoBusy ? '⏳' : '📷'} size={14} color={C.onPrimary} />
+            <Text style={styles.photoBtnText}>
+              {photoBusy ? 'Yükleniyor…' : photoUrl ? 'Fotoğrafı Değiştir' : 'Fotoğraf Yükle'}
+            </Text>
+          </View>
         </PressableFX>
         {photoUrl ? (
           <PressableFX style={[styles.photoBtn, { backgroundColor: C.surfaceLight }]} onPress={removePhoto}>
@@ -190,12 +198,27 @@ export default function ShopScreen() {
         <>
           {/* Nasıl altın kazanılır? */}
           <View style={styles.howCard}>
-            <Text style={styles.howTitle}>🪙 Altın nasıl kazanılır?</Text>
-            <View style={styles.howRow}>
-              <Text style={styles.howItem}>✅ Alışkanlık tamamla +5</Text>
-              <Text style={styles.howItem}>🍅 Odak seansı bitir +15</Text>
-              <Text style={styles.howItem}>🏆 Başarım aç +25..250</Text>
-              <Text style={styles.howItem}>🎯 Günlük görevler +20..150</Text>
+            <View style={styles.howTitleRow}>
+              <Icon emoji="🪙" size={15} color={C.gold} />
+              <Text style={styles.howTitle}>Altın nasıl kazanılır?</Text>
+            </View>
+            <View style={styles.howGrid}>
+              <View style={styles.howRow}>
+                <Icon emoji="✅" size={12} color={C.accent} />
+                <Text style={styles.howItem}>Alışkanlık tamamla +5</Text>
+              </View>
+              <View style={styles.howRow}>
+                <Icon emoji="🍅" size={12} color={C.accent} />
+                <Text style={styles.howItem}>Odak seansı bitir +15</Text>
+              </View>
+              <View style={styles.howRow}>
+                <Icon emoji="🏆" size={12} color={C.gold} />
+                <Text style={styles.howItem}>Başarım aç +25..250</Text>
+              </View>
+              <View style={styles.howRow}>
+                <Icon emoji="🎯" size={12} color={C.primary} />
+                <Text style={styles.howItem}>Günlük görevler +20..150</Text>
+              </View>
             </View>
           </View>
 
@@ -221,9 +244,12 @@ export default function ShopScreen() {
                       notifyBuy(item.name);
                     }}
                   >
-                    <Text style={[styles.btnBuyText, !affordable && styles.btnDisabledText]}>
-                      🪙 {item.price}
-                    </Text>
+                    <View style={styles.priceRow}>
+                      <Icon emoji="🪙" size={12} color={C.gold} />
+                      <Text style={[styles.btnBuyText, !affordable && styles.btnDisabledText]}>
+                        {item.price}
+                      </Text>
+                    </View>
                   </PressableFX>
                   <Text style={styles.ownedCount}>{count} adetin var</Text>
                 </View>
@@ -232,8 +258,9 @@ export default function ShopScreen() {
           </View>
 
           <View style={styles.noteBox}>
+            <Icon emoji="💡" size={13} color={C.primary} style={styles.noteIcon} />
             <Text style={styles.noteText}>
-              💡 İpucu: Tamamladığın alışkanlıklar da altın kazandırır — dükkanda hemen
+              İpucu: Tamamladığın alışkanlıklar da altın kazandırır — dükkanda hemen
               yeni avatar, çerçeve ve temalar açabilirsin!
             </Text>
           </View>
@@ -251,7 +278,7 @@ export default function ShopScreen() {
               const affordable = gold >= item.price;
               return (
                 <View style={styles.itemCard} key={item.id}>
-                  <memoizedAvatarCircle
+                  <MemoizedAvatarCircle
                     avatarId={item.id}
                     size={64}
                     ringColor={isSelected ? C.gold : C.border}
@@ -261,7 +288,10 @@ export default function ShopScreen() {
                   </Text>
                   {isSelected ? (
                     <View style={[styles.itemBtn, styles.btnSelected]}>
-                      <Text style={styles.btnSelectedText}>✓ Seçili</Text>
+                      <View style={styles.btnCheckRow}>
+                        <Icon emoji="✅" size={11} color={C.gold} />
+                        <Text style={styles.btnSelectedText}>Seçili</Text>
+                      </View>
                     </View>
                   ) : isOwned ? (
                     <PressableFX
@@ -279,9 +309,12 @@ export default function ShopScreen() {
                         notifyBuy(item.name);
                       }}
                     >
-                      <Text style={[styles.btnBuyText, !affordable && styles.btnDisabledText]}>
-                        🪙 {item.price}
-                      </Text>
+                      <View style={styles.priceRow}>
+                        <Icon emoji="🪙" size={11} color={C.gold} />
+                        <Text style={[styles.btnBuyText, !affordable && styles.btnDisabledText]}>
+                          {item.price}
+                        </Text>
+                      </View>
                     </PressableFX>
                   )}
                   {isOwned && !isSelected && <OwnedBadge />}
@@ -305,7 +338,7 @@ export default function ShopScreen() {
                 <View key={frame.id} style={styles.itemCard}>
                   {frame.lottie ? (
                     // Lottie çerçeve: canlı animasyonlu aura önizlemesi
-                    <memoizedAvatarCircle
+                    <MemoizedAvatarCircle
                       avatarId={currentAvatar}
                       frameId={frame.id}
                       size={64}
@@ -318,12 +351,16 @@ export default function ShopScreen() {
                       </View>
                     </FrameDecor>
                   )}
-                  <Text style={styles.itemName} numberOfLines={1}>
-                    {frame.vip ? '👑 ' : ''}{frame.name}
-                  </Text>
+                  <View style={styles.itemNameRow}>
+                    {frame.vip ? <Icon emoji="👑" size={12} color={C.gold} /> : null}
+                    <Text style={styles.itemName} numberOfLines={1}>{frame.name}</Text>
+                  </View>
                   {isSelected ? (
                     <View style={[styles.itemBtn, styles.btnSelected]}>
-                      <Text style={styles.btnSelectedText}>✓ Seçili</Text>
+                      <View style={styles.btnCheckRow}>
+                        <Icon emoji="✅" size={11} color={C.gold} />
+                        <Text style={styles.btnSelectedText}>Seçili</Text>
+                      </View>
                     </View>
                   ) : isOwned ? (
                     <PressableFX
@@ -341,9 +378,19 @@ export default function ShopScreen() {
                         notifyBuy(frame.name);
                       }}
                     >
-                      <Text style={[styles.btnBuyText, !affordable && styles.btnDisabledText]}>
-                        {frame.price > 0 ? `🪙 ${frame.price}` : '👑 VIP'}
-                      </Text>
+                      {frame.price > 0 ? (
+                        <View style={styles.priceRow}>
+                          <Icon emoji="🪙" size={11} color={C.gold} />
+                          <Text style={[styles.btnBuyText, !affordable && styles.btnDisabledText]}>
+                            {frame.price}
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={styles.priceRow}>
+                          <Icon emoji="👑" size={11} color={C.gold} />
+                          <Text style={styles.btnBuyText}>VIP</Text>
+                        </View>
+                      )}
                     </PressableFX>
                   )}
                   {isOwned && !isSelected && <OwnedBadge />}
@@ -353,10 +400,13 @@ export default function ShopScreen() {
           </View>
           {!vipActive && (
             <View style={styles.vipHint}>
-              <Text style={styles.vipHintText}>
-                👑 Aurora çerçeveler Season Pass'te seni bekliyor — VIP olarak hepsini
-                açabilirsin!
-              </Text>
+              <View style={styles.vipHintRow}>
+                <Icon emoji="👑" size={13} color={C.gold} />
+                <Text style={styles.vipHintText}>
+                  Aurora çerçeveler Season Pass'te seni bekliyor — VIP olarak hepsini
+                  açabilirsin!
+                </Text>
+              </View>
             </View>
           )}
         </>
@@ -414,10 +464,16 @@ export default function ShopScreen() {
                   <Text style={styles.itemName} numberOfLines={1}>
                     {theme.emoji} {theme.name}
                   </Text>
-                  <Text style={styles.previewHint}>{active ? '👁 önizleniyor' : 'dokun → önizle'}</Text>
+                  <View style={styles.previewHintRow}>
+                    <Icon emoji="👁" size={10} color={active ? C.primary : C.textMuted} />
+                    <Text style={styles.previewHint}>{active ? 'önizleniyor' : 'dokun → önizle'}</Text>
+                  </View>
                   {isSelected ? (
                     <View style={[styles.itemBtn, styles.btnSelected]}>
-                      <Text style={styles.btnSelectedText}>✓ Seçili</Text>
+                      <View style={styles.btnCheckRow}>
+                        <Icon emoji="✅" size={11} color={C.gold} />
+                        <Text style={styles.btnSelectedText}>Seçili</Text>
+                      </View>
                     </View>
                   ) : isOwned ? (
                     <PressableFX
@@ -435,14 +491,17 @@ export default function ShopScreen() {
                         notifyBuy(theme.name);
                       }}
                     >
-                      <Text
-                        style={[
-                          styles.btnBuyText,
-                          !(gold >= theme.price) && styles.btnDisabledText,
-                        ]}
-                      >
-                        🪙 {theme.price}
-                      </Text>
+                      <View style={styles.priceRow}>
+                        <Icon emoji="🪙" size={11} color={C.gold} />
+                        <Text
+                          style={[
+                            styles.btnBuyText,
+                            !(gold >= theme.price) && styles.btnDisabledText,
+                          ]}
+                        >
+                          {theme.price}
+                        </Text>
+                      </View>
                     </PressableFX>
                   )}
                   {isOwned && !isSelected && <OwnedBadge />}
@@ -501,7 +560,10 @@ function ThemePreview({ C, styles, theme, isSelected, isOwned, affordable, onSel
       <View style={styles.previewActions}>
         {isSelected ? (
           <View style={[styles.previewAction, styles.btnSelected]}>
-            <Text style={styles.btnSelectedText}>✓ Şu an kullanımda</Text>
+            <View style={styles.btnCheckRow}>
+              <Icon emoji="✅" size={11} color={C.gold} />
+              <Text style={styles.btnSelectedText}>Şu an kullanımda</Text>
+            </View>
           </View>
         ) : isOwned ? (
           <PressableFX style={[styles.previewAction, styles.btnOwned]} onPress={onSelect}>
@@ -513,9 +575,12 @@ function ThemePreview({ C, styles, theme, isSelected, isOwned, affordable, onSel
             disabled={!affordable}
             onPress={onBuy}
           >
-            <Text style={[styles.btnBuyText, !affordable && styles.btnDisabledText]}>
-              🪙 {theme.price} ile satın al
-            </Text>
+            <View style={styles.priceRow}>
+              <Icon emoji="🪙" size={11} color={C.gold} />
+              <Text style={[styles.btnBuyText, !affordable && styles.btnDisabledText]}>
+                {theme.price} ile satın al
+              </Text>
+            </View>
           </PressableFX>
         )}
       </View>
@@ -560,9 +625,6 @@ function makeStyles(C) {
       paddingHorizontal: 14,
       paddingVertical: 8,
     },
-    balanceIcon: {
-      fontSize: 16,
-    },
     balanceText: {
       color: C.gold,
       fontSize: 16,
@@ -580,6 +642,11 @@ function makeStyles(C) {
       paddingVertical: 9,
       borderWidth: 1,
       borderColor: C.border,
+    },
+    tabChipContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
     },
     tabChipText: {
       color: C.textMuted,
@@ -629,6 +696,11 @@ function makeStyles(C) {
       paddingVertical: 10,
       alignItems: 'center',
     },
+    photoBtnContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
     photoBtnText: {
       color: C.onPrimary,
       fontSize: 13,
@@ -645,25 +717,35 @@ function makeStyles(C) {
       borderWidth: 1,
       borderColor: C.border,
       padding: 14,
-      gap: 8,
+      gap: 10,
+    },
+    howTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
     },
     howTitle: {
       color: C.text,
       fontSize: 13,
       fontWeight: '700',
     },
-    howRow: {
+    howGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
       gap: 8,
     },
-    howItem: {
-      color: C.textMuted,
-      fontSize: 11,
+    howRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
       backgroundColor: C.background,
       borderRadius: 8,
       paddingHorizontal: 8,
       paddingVertical: 4,
+    },
+    howItem: {
+      color: C.textMuted,
+      fontSize: 11,
     },
     sectionTitle: {
       color: C.textMuted,
@@ -717,6 +799,11 @@ function makeStyles(C) {
       fontSize: 10,
       fontWeight: '600',
     },
+    previewHintRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
     frameAvatar: {
       width: 64,
       height: 64,
@@ -734,6 +821,11 @@ function makeStyles(C) {
       color: C.text,
       fontSize: 13,
       fontWeight: '700',
+    },
+    itemNameRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
     },
     itemDesc: {
       color: C.textMuted,
@@ -753,6 +845,16 @@ function makeStyles(C) {
       borderRadius: 10,
       paddingVertical: 8,
       alignItems: 'center',
+    },
+    btnCheckRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+    },
+    priceRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
     },
     btnSelected: {
       backgroundColor: C.gold + '22',
@@ -869,16 +971,23 @@ function makeStyles(C) {
       alignItems: 'center',
     },
     noteBox: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
       backgroundColor: C.surface,
       borderRadius: 14,
       borderWidth: 1,
       borderColor: C.border,
       padding: 14,
     },
+    noteIcon: {
+      marginTop: 2,
+    },
     noteText: {
       color: C.textMuted,
       fontSize: 12,
       lineHeight: 18,
+      flex: 1,
     },
     vipHint: {
       backgroundColor: C.gold + '1a',
@@ -887,10 +996,16 @@ function makeStyles(C) {
       borderColor: C.gold + '55',
       padding: 14,
     },
+    vipHintRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+    },
     vipHintText: {
       color: C.text,
       fontSize: 12,
       lineHeight: 18,
+      flex: 1,
     },
   });
 }

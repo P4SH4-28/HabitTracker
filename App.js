@@ -26,6 +26,7 @@ import LevelUpModal from './src/components/LevelUpModal';
 import Onboarding from './src/components/Onboarding';
 import SplashSkeleton from './src/components/SplashSkeleton';
 import TopBar from './src/components/TopBar';
+import PillTabBar from './src/components/ui/PillTabBar';
 import AuthScreen from './src/screens/AuthScreen';
 import AchievementsScreen from './src/screens/AchievementsScreen';
 import AdminScreen from './src/screens/AdminScreen';
@@ -41,7 +42,7 @@ import SettingsScreen from './src/screens/SettingsScreen';
 import ShopScreen from './src/screens/ShopScreen';
 import SocialScreen from './src/screens/SocialScreen';
 import TeamScreen from './src/screens/TeamScreen';
-import { resolveTheme, ThemeProvider, useTheme } from './src/theme';
+import { resolveTheme, ThemeProvider } from './src/theme';
 import { useNavigation } from '@react-navigation/native';
 
 const Tab = createBottomTabNavigator();
@@ -94,25 +95,14 @@ function AppHeader({ navigation, route }) {
 function TabNavigator() {
   const { data, leaderboardMinLevel } = useData();
   const { user: authUser } = useAuth();
-  const { colors } = useTheme();
   const leaderboardLocked = levelFromTotalXp(data.stats.totalXp).level < leaderboardMinLevel;
 
   return (
     <Tab.Navigator
+      tabBar={(props) => <PillTabBar {...props} />}
       screenOptions={({ route }) => ({
         headerShown: true,
         header: (props) => <AppHeader {...props} />,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: colors.border,
-          borderTopWidth: 1,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '700',
-        },
         tabBarIcon: ({ focused, color, size }) => {
           // Liderlik kilitliyken sekme ikonu kilit olur (kilit ekranı da var).
           if (route.name === 'Leaderboard' && leaderboardLocked) {

@@ -12,12 +12,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import PlayerProfileModal from '../components/PlayerProfileModal';
 import AvatarCircle from '../components/AvatarCircle';
+import SoftButton from '../components/ui/SoftButton';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { getAvatarEmoji } from '../data/shop';
 import { bestStreak, levelFromTotalXp } from '../logic';
 import { getLeaderboardData } from '../services/leaderboardService';
 import { useTheme } from '../theme';
+import Icon from '../components/ui/icons';
+import IconTile from '../components/ui/IconTile';
+import Pill from '../components/ui/Pill';
 
 const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
 // Madalya renkleri sabittir (tema değişse bile kupa renkleri değişmez).
@@ -125,7 +129,7 @@ export default function LeaderboardScreen() {
           <Text style={styles.screenSub}>Arkadaşlarınla rekabet et</Text>
 
           <View style={styles.lockBox}>
-            <Text style={styles.lockEmoji}>🏆</Text>
+            <IconTile icon="trophy" emoji="🏆" variant="gold" size={60} iconSize={27} />
             <Text style={styles.lockTitle}>Liderlik Tablosu Kilitli</Text>
             <Text style={styles.lockText}>
               {leaderboardMinLevel}. seviyeye ulaştığında tablo açılır ve herkesin
@@ -167,18 +171,21 @@ export default function LeaderboardScreen() {
 
         {live && !live.ok && (
           <View style={styles.offlineBox}>
-            <Text style={styles.offlineText}>
-              📡 Canlı liderlik verisi alınamadı — önbellek gösteriliyor.
-            </Text>
-            <Pressable
-              style={styles.retryButton}
+            <View style={styles.offlineRow}>
+              <Icon emoji="📡" size={14} color={C.danger} />
+              <Text style={styles.offlineText}>
+                Canlı liderlik verisi alınamadı — önbellek gösteriliyor.
+              </Text>
+            </View>
+            <SoftButton
+              label="Yenile"
+              variant="ghost"
+              size="xs"
               onPress={() => {
                 refreshServer();
                 loadLive();
               }}
-            >
-              <Text style={styles.retryText}>Yenile</Text>
-            </Pressable>
+            />
           </View>
         )}
 
@@ -194,7 +201,7 @@ export default function LeaderboardScreen() {
                   style={[styles.podiumCard, { height: isTop ? 130 : 100 }, e.isMe && styles.meCard]}
                   onPress={() => setSelected(e)}
                 >
-                  <Text style={styles.podiumMedal}>{MEDALS[rank]}</Text>
+                  <Icon emoji={MEDALS[rank]} size={24} color={PODIUM_COLORS[rank]} style={styles.podiumMedal} />
                   <AvatarCircle
                     avatarId={e.avatarId}
                     photo={e.photoUrl}
@@ -209,7 +216,10 @@ export default function LeaderboardScreen() {
                     {e.totalXp} XP
                   </Text>
                   {e.coins != null && (
-                    <Text style={styles.podiumCoins}>🪙 {e.coins}</Text>
+                    <View style={styles.podiumCoinRow}>
+                      <Icon emoji="🪙" size={10} color={C.gold} />
+                      <Text style={styles.podiumCoins}>{e.coins}</Text>
+                    </View>
                   )}
                   {e.isMe && <Text style={styles.meLabel}>SEN</Text>}
                 </Pressable>
@@ -230,7 +240,14 @@ export default function LeaderboardScreen() {
               onPress={() => setSelected(e)}
             >
               <View style={styles.rankBox}>
-                <Text style={[styles.rank, i < 3 && styles.rankTop]}>{i + 1}</Text>
+                <Pill
+                  size="sm"
+                  bg={C.surfaceLight}
+                  color={i < 3 ? PODIUM_COLORS[i + 1] : C.textMuted}
+                  style={styles.rankPill}
+                >
+                  {i + 1}
+                </Pill>
               </View>
               <AvatarCircle
                 avatarId={e.avatarId}
@@ -246,23 +263,42 @@ export default function LeaderboardScreen() {
                   {e.isFriend && <Text style={styles.friendChip}>ARKADAŞ</Text>}
                   {/* Katman 4: şüpheli kullanıcı bayrağı (herkese görünür) */}
                   {e.flagged && (
-                    <Text style={styles.flagChip}>⚠️ ŞÜPHELİ</Text>
+                    <View style={styles.flagChip}>
+                      <Icon emoji="⚠️" size={10} color={C.danger} />
+                      <Text style={styles.flagChipText}>ŞÜPHELİ</Text>
+                    </View>
                   )}
                 </View>
-                <Text style={styles.rowStreak}>
-                  {e.coins != null ? `🪙 ${e.coins}` : `🔥 ${e.streak} günlük seri`}
-                  {e.xp7d > 0 ? `   •   7 gün: +${e.xp7d} XP` : ''}
-                </Text>
+                <View style={styles.rowStreak}>
+                  {e.coins != null ? (
+                    <>
+                      <Icon emoji="🪙" size={12} color={C.gold} />
+                      <Text style={styles.rowStreakText}>{e.coins}</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Icon emoji="🔥" size={12} color={C.textMuted} />
+                      <Text style={styles.rowStreakText}>{e.streak} günlük seri</Text>
+                    </>
+                  )}
+                  {e.xp7d > 0 ? (
+                    <>
+                      <Text style={styles.rowStreakSep}>•</Text>
+                      <Text style={styles.rowStreakText}>7 gün: +{e.xp7d} XP</Text>
+                    </>
+                  ) : null}
+                </View>
               </View>
               <Text style={styles.rowXp}>{e.totalXp} XP</Text>
-              <Text style={styles.chevron}>›</Text>
+              <Icon name="chevron-forward" size={16} color={C.textMuted} />
             </Pressable>
           ))}
         </View>
 
         <View style={styles.noteBox}>
+          <Icon emoji="💡" size={14} color={C.primary} style={styles.noteIcon} />
           <Text style={styles.noteText}>
-            💡 Profillere dokunabilir, o kullanıcının gelişim verilerini görebilir ve arkadaşlık
+            Profillere dokunabilir, o kullanıcının gelişim verilerini görebilir ve arkadaşlık
             isteği gönderebilirsin. Onaylanan arkadaşların Arkadaşlar sekmesinde listelenir.
           </Text>
         </View>
@@ -299,32 +335,22 @@ function makeStyles(C) {
       marginBottom: 4,
     },
     offlineBox: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: 10,
       backgroundColor: C.surface,
       borderRadius: 14,
       borderWidth: 1,
       borderColor: C.danger,
       padding: 12,
     },
+    offlineRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+    },
     offlineText: {
       flex: 1,
       color: C.textMuted,
       fontSize: 12,
       lineHeight: 17,
-    },
-    retryButton: {
-      backgroundColor: C.primary,
-      borderRadius: 10,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-    },
-    retryText: {
-      color: C.onPrimary,
-      fontSize: 12,
-      fontWeight: '800',
     },
     lockBox: {
       backgroundColor: C.surface,
@@ -335,9 +361,6 @@ function makeStyles(C) {
       alignItems: 'center',
       gap: 12,
       marginTop: 20,
-    },
-    lockEmoji: {
-      fontSize: 52,
     },
     lockTitle: {
       color: C.text,
@@ -409,19 +432,6 @@ function makeStyles(C) {
       position: 'absolute',
       top: 8,
     },
-    podiumAvatar: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
-      backgroundColor: C.surfaceLight,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 2,
-      marginTop: 20,
-    },
-    podiumEmoji: {
-      fontSize: 24,
-    },
     podiumName: {
       color: C.text,
       fontSize: 13,
@@ -435,6 +445,11 @@ function makeStyles(C) {
       color: C.textMuted,
       fontSize: 10,
       fontWeight: '700',
+    },
+    podiumCoinRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
     },
     meLabel: {
       color: C.primary,
@@ -460,16 +475,13 @@ function makeStyles(C) {
       backgroundColor: C.primaryDark + '33',
     },
     rankBox: {
-      width: 30,
+      width: 32,
       alignItems: 'center',
     },
-    rank: {
-      color: C.textMuted,
-      fontSize: 15,
-      fontWeight: '800',
-    },
-    rankTop: {
-      color: C.text,
+    rankPill: {
+      minWidth: 26,
+      justifyContent: 'center',
+      alignItems: 'center',
     },
     rowEmoji: {
       fontSize: 20,
@@ -503,18 +515,32 @@ function makeStyles(C) {
       overflow: 'hidden',
     },
     flagChip: {
-      color: C.danger,
-      fontSize: 9,
-      fontWeight: '800',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
       backgroundColor: C.danger + '22',
       paddingHorizontal: 6,
       paddingVertical: 2,
       borderRadius: 6,
-      overflow: 'hidden',
+    },
+    flagChipText: {
+      color: C.danger,
+      fontSize: 9,
+      fontWeight: '800',
     },
     rowStreak: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+    },
+    rowStreakText: {
       color: C.textMuted,
       fontSize: 12,
+    },
+    rowStreakSep: {
+      color: C.textMuted,
+      fontSize: 12,
+      opacity: 0.4,
     },
     rowXp: {
       color: C.xp,
@@ -527,11 +553,17 @@ function makeStyles(C) {
       fontWeight: '700',
     },
     noteBox: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
       backgroundColor: C.surface,
       borderRadius: 14,
       borderWidth: 1,
       borderColor: C.border,
       padding: 14,
+    },
+    noteIcon: {
+      marginTop: 1,
     },
     noteText: {
       color: C.textMuted,

@@ -3,23 +3,33 @@
 // Sol: hamburger (sekmeler) veya geri ok (alt ekranlar).
 // Orta: başlık. Sağ: senkron durum rozeti + isteğe bağlı içerik.
 // ============================================================
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
+import { Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMenu } from '../context/MenuContext';
 import SyncStatusChip from './SyncStatusChip';
 import { useTheme } from '../theme';
 
 export default function TopBar({ title, onBack, right }) {
-  const { colors: C } = useTheme();
+  const { colors: C, radius } = useTheme();
   const { openMenu } = useMenu();
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.bar, { paddingTop: insets.top + 6, backgroundColor: C.surface }]}>
+    <BlurView
+      intensity={55}
+      tint="dark"
+      style={[styles.bar, { paddingTop: insets.top + 6 }]}
+    >
       <View style={styles.inner}>
         <Pressable
-          style={[styles.iconBtn, { backgroundColor: C.surfaceLight }]}
+          style={({ pressed }) => [
+            styles.iconBtn,
+            { backgroundColor: C.surfaceLight, borderColor: C.border },
+            pressed && { transform: [{ scale: 0.93 }], opacity: 0.85 },
+          ]}
           onPress={onBack || openMenu}
           hitSlop={8}
         >
@@ -36,15 +46,16 @@ export default function TopBar({ title, onBack, right }) {
           {right || <SyncStatusChip />}
         </View>
       </View>
-    </View>
+    </BlurView>
   );
 }
 
 const styles = StyleSheet.create({
   bar: {
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(128,128,128,0.15)',
+    borderBottomColor: 'rgba(255,255,255,0.06)',
     paddingBottom: 8,
+    overflow: 'hidden',
   },
   inner: {
     flexDirection: 'row',
@@ -56,6 +67,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 12,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },

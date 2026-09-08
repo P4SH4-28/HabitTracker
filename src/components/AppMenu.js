@@ -16,6 +16,7 @@ import { useMenu } from '../context/MenuContext';
 import AvatarCircle from './AvatarCircle';
 import { levelFromTotalXp } from '../logic';
 import { useTheme } from '../theme';
+import Icon from './ui/icons';
 
 const MENU_ITEMS = [
   { key: 'QuestBoard', icon: 'flag', label: 'Günün Görevleri', desc: 'Günlük 4+4 görev' },
@@ -156,9 +157,13 @@ export default function AppMenu() {
               <Text style={styles.profileName} numberOfLines={1}>
                 {authUser?.name || 'Oyuncu'}
               </Text>
-              <Text style={styles.profileLevel}>
-                Seviye {levelInfo.level} • {data.stats.gold || 0} 🪙
-              </Text>
+              <View style={styles.profileLevelRow}>
+                <Text style={styles.profileLevel}>
+                  Seviye {levelInfo.level} • {' '}
+                </Text>
+                <Icon emoji="🪙" size={12} color={C.gold} />
+                <Text style={styles.profileLevel}>{data.stats.gold || 0}</Text>
+              </View>
             </View>
             <Pressable style={styles.closeBtn} onPress={() => closeAnim()} hitSlop={8}>
               <Ionicons name="close" size={20} color={C.textMuted} />
@@ -249,6 +254,10 @@ function makeStyles(C) {
       color: C.textMuted,
       fontSize: 12,
       fontWeight: '600',
+    },
+    profileLevelRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
     },
     closeBtn: {
       width: 32,

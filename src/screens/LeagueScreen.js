@@ -9,6 +9,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { useData } from '../context/DataContext';
 import { getLeague, LEAGUES, nextLeagueInfo, weekEndFor, weekKeyFor } from '../data/leagues';
 import { useTheme } from '../theme';
+import Icon from '../components/ui/icons';
 
 function formatCountdown(ms) {
   const totalHours = Math.max(0, Math.floor(ms / 3600000));
@@ -52,7 +53,7 @@ export default function LeagueScreen() {
       } else {
         Alert.alert(
           'Ödül alındı!',
-          `Bu hafta ${r.league.name} ligindesin: +${r.reward} 🪙 hesabına eklendi. Haftaya daha üst lig hedefle!`
+          `Bu hafta ${r.league.name} ligindesin: +${r.reward} altın hesabına eklendi. Haftaya daha üst lig hedefle!`
         );
       }
     } finally {
@@ -70,9 +71,9 @@ export default function LeagueScreen() {
       <View style={[styles.tierCard, { borderColor: myLeague.color + '88' }]}>
         <View style={styles.tierTop}>
           <View style={styles.tierLeft}>
-            <Text style={[styles.tierEmojiWrap, { backgroundColor: myLeague.color + '22' }]}>
-              <Text style={styles.tierEmoji}>{myLeague.emoji}</Text>
-            </Text>
+            <View style={[styles.tierEmojiWrap, { backgroundColor: myLeague.color + '22' }]}>
+              <Icon emoji={myLeague.emoji} size={26} color={myLeague.color} />
+            </View>
             <View>
               <Text style={[styles.tierName, { color: myLeague.color }]}>{myLeague.name} Lig</Text>
               <Text style={styles.tierXp}>Bu hafta {myXp7d} XP kazandın</Text>
@@ -107,20 +108,31 @@ export default function LeagueScreen() {
 
       {/* Haftalık ödül */}
       <View style={styles.rewardCard}>
-        <Text style={styles.rewardTitle}>🎁 Haftalık lig ödülü</Text>
-        <Text style={styles.rewardDesc}>
-          {claimAvailable
-            ? `Bu hafta ${myLeague.name} liginde bitirirsen +${myLeague.reward} 🪙 kazanırsın. Pazar gecesi yatmadan almayı unutma!`
-            : `Bu haftanın ödülü alındı: +${LEAGUES.find((l) => l.id === claim?.tier)?.reward || 0} 🪙 (${LEAGUES.find((l) => l.id === claim?.tier)?.name})`}
-        </Text>
+        <View style={styles.rewardTitleRow}>
+          <Icon emoji="🎁" size={15} color={C.gold} />
+          <Text style={styles.rewardTitle}>Haftalık lig ödülü</Text>
+        </View>
+        <View style={styles.rewardDescRow}>
+          <Icon emoji="🪙" size={12} color={C.gold} />
+          <Text style={styles.rewardDesc}>
+            {claimAvailable
+              ? `Bu hafta ${myLeague.name} liginde bitirirsen +${myLeague.reward} kazanırsın. Pazar gecesi yatmadan almayı unutma!`
+              : `Bu haftanın ödülü alındı: +${LEAGUES.find((l) => l.id === claim?.tier)?.reward || 0} (${LEAGUES.find((l) => l.id === claim?.tier)?.name})`}
+          </Text>
+        </View>
         <Pressable
           style={[styles.claimBtn, !claimAvailable && styles.claimBtnDone]}
           disabled={!claimAvailable || claiming}
           onPress={handleClaim}
         >
-          <Text style={[styles.claimBtnText, !claimAvailable && styles.claimBtnTextDone]}>
-            {claimAvailable ? 'Ödülü Al' : '✓ Bu hafta alındı'}
-          </Text>
+          {claimAvailable ? (
+            <Text style={styles.claimBtnText}>Ödülü Al</Text>
+          ) : (
+            <View style={styles.claimBtnDoneRow}>
+              <Icon emoji="✅" size={13} color={C.primary} />
+              <Text style={[styles.claimBtnText, styles.claimBtnTextDone]}>Bu hafta alındı</Text>
+            </View>
+          )}
         </Pressable>
       </View>
 
@@ -132,7 +144,9 @@ export default function LeagueScreen() {
           return (
             <View key={p.id} style={[styles.rankRow, isMe && styles.rankRowMe]}>
               <Text style={styles.rankNum}>{i + 1}</Text>
-              <Text style={styles.rankEmoji}>{p.league.emoji}</Text>
+              <Text style={styles.rankEmoji}>
+                <Icon emoji={p.league.emoji} size={16} color={C.textMuted} />
+              </Text>
               <Text style={[styles.rankName, isMe && styles.rankNameMe]} numberOfLines={1}>
                 {p.username}
                 {isMe ? ' (sen)' : ''}
@@ -154,17 +168,23 @@ export default function LeagueScreen() {
       <View style={styles.leaguesCard}>
         {LEAGUES.map((l) => (
           <View key={l.id} style={styles.leagueRow}>
-            <Text style={styles.leagueEmoji}>{l.emoji}</Text>
+            <Text style={styles.leagueEmoji}>
+              <Icon emoji={l.emoji} size={18} color={C.textMuted} />
+            </Text>
             <Text style={[styles.leagueName, { color: l.color }]}>{l.name}</Text>
             <Text style={styles.leagueMin}>haftada {l.minXp} XP</Text>
-            <Text style={styles.leagueReward}>+{l.reward} 🪙</Text>
+            <View style={styles.leagueRewardRow}>
+              <Icon emoji="🪙" size={11} color={C.gold} />
+              <Text style={styles.leagueReward}>+{l.reward}</Text>
+            </View>
           </View>
         ))}
       </View>
 
       <View style={styles.noteBox}>
+        <Icon emoji="💡" size={13} color={C.primary} style={styles.noteIcon} />
         <Text style={styles.noteText}>
-          💡 Lig XP'n sunucudaki 7 günlük kazanç trendinden hesaplanır — cihaz
+          Lig XP'n sunucudaki 7 günlük kazanç trendinden hesaplanır — cihaz
           verisi oynatılamaz. Her hafta Pazartesi günü sıfırlanır; ödül Pazar
           gecesi alınır ve haftada bir kezdir.
         </Text>
@@ -208,9 +228,6 @@ function makeStyles(C) {
       borderRadius: 16,
       alignItems: 'center',
       justifyContent: 'center',
-    },
-    tierEmoji: {
-      fontSize: 28,
     },
     tierName: {
       fontSize: 18,
@@ -259,21 +276,38 @@ function makeStyles(C) {
       padding: 14,
       gap: 8,
     },
+    rewardTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
     rewardTitle: {
       color: C.text,
       fontSize: 14,
       fontWeight: '800',
     },
+    rewardDescRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 6,
+    },
     rewardDesc: {
       color: C.textMuted,
       fontSize: 12,
       lineHeight: 18,
+      flex: 1,
     },
     claimBtn: {
       backgroundColor: C.primary,
       borderRadius: 12,
       paddingVertical: 11,
       alignItems: 'center',
+      justifyContent: 'center',
+    },
+    claimBtnDoneRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
     },
     claimBtnDone: {
       backgroundColor: C.primary + '22',
@@ -368,17 +402,28 @@ function makeStyles(C) {
       color: C.textMuted,
       fontSize: 12,
     },
+    leagueRewardRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
     leagueReward: {
       color: C.gold,
       fontSize: 12,
       fontWeight: '800',
     },
     noteBox: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
       backgroundColor: C.surface,
       borderRadius: 14,
       borderWidth: 1,
       borderColor: C.border,
       padding: 14,
+    },
+    noteIcon: {
+      marginTop: 2,
     },
     noteText: {
       color: C.textMuted,

@@ -8,17 +8,19 @@
 import { createContext, useContext } from 'react';
 
 // Varsayılan (Gece teması) renkler — temalar bu değerlerin üzerine yazar.
+// Premium "Linear/Vercel" kimliği: derin zinc siyahı zemin, muted indigo CTA,
+// neon-emerald tamamlama/badge aksanı. Göz yormayan, düşük doygunluk tonları.
 const BASE_COLORS = {
-  background: '#0B0E14',
-  surface: '#151A23',
-  surfaceLight: '#1E2530',
-  border: '#2A3340',
-  primary: '#7C5CFF',
-  primaryDark: '#5E3FD4',
-  accent: '#22D3A5',
+  background: '#09090B',
+  surface: '#131316',
+  surfaceLight: '#1C1C21',
+  border: 'rgba(255,255,255,0.07)',
+  primary: '#6366F1',
+  primaryDark: '#4F46E5',
+  accent: '#10B981',
   danger: '#F0436E',
-  text: '#F2F5F9',
-  textMuted: '#8A94A6',
+  text: '#FAFAFA',
+  textMuted: '#A1A1AA',
   xp: '#FFB454',
   gold: '#FFD75E',
   silver: '#C0C8D8',
@@ -28,6 +30,39 @@ const BASE_COLORS = {
   // Ekran arka planına serpiştirilen dekoratif desen emojisi (null = desensiz).
   pattern: null,
 };
+
+// ---------- Design tokens (yapısal) ----------
+// Bileşenler useTheme() üzerinden alır; köşe yarıçapı, boşluk ve glow
+// fabrikaları tüm uygulamada tutarlı premium geometri üretir.
+export const RADIUS = {
+  card: 20, // ana kartlar/kapsayıcılar
+  control: 14, // butonlar/inputlar/sekmeler
+  sheet: 24, // alt-sheet/modallar
+  pill: 999, // rozetler/etiketler
+  chip: 12, // küçük çipler
+};
+
+export const SPACE = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 20,
+  xxl: 28,
+};
+
+// Glow gölge fabrikası: rengine göre yumuşak dış ışıma üretir.
+// iOS'ta shadow* alanları, Android'de elevation kullanır.
+export function glow(color, opts = {}) {
+  const { radius = 16, opacity = 0.35, offset = 6, elevation = 8 } = opts;
+  return {
+    shadowColor: color,
+    shadowOpacity: opacity,
+    shadowRadius: radius,
+    shadowOffset: { width: 0, height: offset },
+    elevation,
+  };
+}
 
 // Eski bileşenlerin importunu kırmamak için aynı isimde export.
 // Yeni kod doğrudan useTheme() kullanır; bu nesne yalnızca varsayılandır.
@@ -288,10 +323,19 @@ export function resolveTheme(themeId) {
 // useTheme() ile alır. Tema değişince provider değeri değişir ve tüm
 // bileşenler yeni renklerle yeniden çizilir.
 
-const ThemeContext = createContext({ colors: BASE_COLORS });
+const ThemeContext = createContext({ colors: BASE_COLORS, radius: RADIUS, space: SPACE });
 
 export const ThemeProvider = ThemeContext.Provider;
 
+// Bileşenler useTheme() ile renk paletine + yapısal token'lara tek yerden erişir:
+//   const { colors: C, radius, space, glow } = useTheme();
+// Colors API'si eski kullanımlarla birebir uyumludur (bozma yok).
 export function useTheme() {
-  return useContext(ThemeContext);
+  const ctx = useContext(ThemeContext);
+  return {
+    colors: ctx.colors || BASE_COLORS,
+    radius: ctx.radius || RADIUS,
+    space: ctx.space || SPACE,
+    glow,
+  };
 }

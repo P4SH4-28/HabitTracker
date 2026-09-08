@@ -2,14 +2,23 @@ import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../theme';
 import AnimatedCounter from './AnimatedCounter';
+import Icon from './ui/icons';
 
 export default function StatCard({ label, value, icon, color }) {
   const { colors: C } = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
   return (
     <View style={styles.card}>
-      <View style={[styles.iconBox, { backgroundColor: (color || C.primary) + '22' }]}>
-        <Text style={styles.icon}>{icon}</Text>
+      <View
+        style={[
+          styles.iconBox,
+          {
+            backgroundColor: (color || C.primary) + '22',
+            borderColor: (color || C.primary) + '33',
+          },
+        ]}
+      >
+        <Icon emoji={icon} size={16} color={color || C.primary} />
       </View>
       <AnimatedCounter value={value} style={styles.value} />
       <Text style={styles.label}>{label}</Text>
@@ -32,11 +41,9 @@ function makeStyles(C) {
       width: 32,
       height: 32,
       borderRadius: 10,
+      borderWidth: 1,
       alignItems: 'center',
       justifyContent: 'center',
-    },
-    icon: {
-      fontSize: 15,
     },
     value: {
       color: C.text,

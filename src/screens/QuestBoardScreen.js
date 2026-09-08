@@ -29,6 +29,7 @@ import {
   QUEST_DIFFICULTY_ORDER,
 } from '../data/quests';
 import { useTheme } from '../theme';
+import Icon from '../components/ui/icons';
 
 export default function QuestBoardScreen() {
   const { data, today, claimQuest, server, refreshServer, refreshing, vipActive } = useData();
@@ -77,15 +78,16 @@ export default function QuestBoardScreen() {
     return (
       <View key={quest.id} style={[styles.quest, { borderColor: accent + '44' }]}>
         <View style={styles.questTop}>
-          <Text style={styles.questEmoji}>{quest.emoji}</Text>
+          <Icon emoji={quest.emoji} size={26} color={accent} />
           <View style={styles.questInfo}>
             <View style={styles.questTitleRow}>
               <Text style={styles.questTitle} numberOfLines={1}>
                 {quest.title}
               </Text>
               {isVip && (
-                <View style={[styles.vipChip, { backgroundColor: C.gold + '22' }]}>
-                  <Text style={[styles.vipChipText, { color: C.gold }]}>👑 VIP</Text>
+                <View style={styles.vipChipRow}>
+                  <Icon emoji="👑" size={11} color={C.gold} />
+                  <Text style={[styles.vipChipText, { color: C.gold }]}>VIP</Text>
                 </View>
               )}
             </View>
@@ -97,7 +99,8 @@ export default function QuestBoardScreen() {
                 <Text style={[styles.rewardText, { color: C.xp }]}>+{reward.xp} XP</Text>
               </View>
               <View style={[styles.rewardChip, { backgroundColor: C.gold + '22' }]}>
-                <Text style={[styles.rewardText, { color: C.gold }]}>+{reward.gold} 🪙</Text>
+                <Icon emoji="🪙" size={10} color={C.gold} />
+                <Text style={[styles.rewardText, { color: C.gold }]}>+{reward.gold}</Text>
               </View>
               {isVip && (
                 <Text style={[styles.multiplierNote, { color: C.gold }]}>×1.5 dahil</Text>
@@ -114,9 +117,10 @@ export default function QuestBoardScreen() {
             {progress}/{quest.target}
             {claimed ? ' • bugün tamamlandı ✓' : ready ? ' • ödül hazır!' : ''}
           </Text>
-          {claimed ? (
+            {claimed ? (
             <View style={[styles.doneChip, { backgroundColor: C.accent + '22' }]}>
-              <Text style={[styles.doneChipText, { color: C.accent }]}>Tamamlandı ✓</Text>
+              <Icon emoji="✅" size={12} color={C.accent} />
+              <Text style={[styles.doneChipText, { color: C.accent }]}>Tamamlandı</Text>
             </View>
           ) : (
             <Pressable
@@ -157,7 +161,10 @@ export default function QuestBoardScreen() {
         />
       }
     >
-      <Text style={styles.screenTitle}>🎯 Günün Görevleri</Text>
+      <View style={styles.screenTitleRow}>
+        <Icon emoji="🎯" size={20} color={C.primary} />
+        <Text style={styles.screenTitle}>Günün Görevleri</Text>
+      </View>
       <Text style={styles.screenSub}>
         Görevler her gece yarısı yenilenir ve her gün havuzdan farklı görevler
         seçilir. Bugün {doneToday}/{totalToday} görev tamamladın.
@@ -165,10 +172,13 @@ export default function QuestBoardScreen() {
 
       {offline && (
         <View style={styles.offlineBox}>
-          <Text style={styles.offlineText}>
-            📡 Sunucuya bağlanılamıyor — ödüller sunucu onayı gerektirdiği için
-            şu an görev tamamlayamazsın. Bağlantı gelince yeniden dene.
-          </Text>
+          <View style={styles.offlineRow}>
+            <Icon emoji="📡" size={14} color={C.danger} />
+            <Text style={styles.offlineText}>
+              Sunucuya bağlanılamıyor — ödüller sunucu onayı gerektirdiği için
+              şu an görev tamamlayamazsın. Bağlantı gelince yeniden dene.
+            </Text>
+          </View>
         </View>
       )}
 
@@ -176,7 +186,7 @@ export default function QuestBoardScreen() {
       {!vipActive ? (
         <Pressable style={styles.vipBanner} onPress={() => navigation.navigate('SeasonPass')}>
           <View style={styles.vipBannerTop}>
-            <Text style={styles.vipBannerEmoji}>👑</Text>
+            <Icon emoji="👑" size={20} color={C.gold} />
             <Text style={styles.vipBannerTitle}>VIP ol, 8 görev kazan</Text>
           </View>
           <Text style={styles.vipBannerText}>
@@ -186,9 +196,12 @@ export default function QuestBoardScreen() {
         </Pressable>
       ) : (
         <View style={[styles.vipActiveBox, { borderColor: C.gold + '55' }]}>
-          <Text style={[styles.vipActiveText, { color: C.gold }]}>
-            👑 VIP aktif — {vipDaysLeft} gün kaldı. Ekstra görevler ve ×1.5 çarpan açık!
-          </Text>
+          <View style={styles.vipActiveRow}>
+            <Icon emoji="👑" size={15} color={C.gold} />
+            <Text style={[styles.vipActiveText, { color: C.gold }]}>
+              VIP aktif — {vipDaysLeft} gün kaldı. Ekstra görevler ve ×1.5 çarpan açık!
+            </Text>
+          </View>
         </View>
       )}
 
@@ -218,7 +231,7 @@ export default function QuestBoardScreen() {
         <View style={[styles.section, styles.vipSection]}>
           <View style={styles.sectionHeader}>
             <View style={[styles.sectionIcon, { backgroundColor: C.gold + '22' }]}>
-              <Text style={styles.sectionIconText}>👑</Text>
+              <Icon emoji="👑" size={18} color={C.gold} />
             </View>
             <View style={styles.sectionTitles}>
               <Text style={[styles.sectionTitle, { color: C.gold }]}>VIP Ekstra Görevler</Text>
@@ -230,8 +243,9 @@ export default function QuestBoardScreen() {
       )}
 
       <View style={styles.noteBox}>
-        <Text style={styles.noteText}>
-          💡 Görevler her gece yarısı otomatik yenilenir, günde bir kez alınır ve
+                <Text style={styles.noteText}>
+          <Icon emoji="💡" size={13} color={C.primary} style={styles.noteIcon} />{' '}
+          Görevler her gece yarısı otomatik yenilenir, günde bir kez alınır ve
           her gün havuzdan farklı görevler seçilir. Tüm görevler uygulamanın kendi
           sayaçlarıyla ölçülür; ödüller sunucu onayıyla verilir.
         </Text>
@@ -255,6 +269,11 @@ function makeStyles(C) {
       color: C.text,
       fontSize: 24,
       fontWeight: '800',
+    },
+    screenTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
     },
     screenSub: {
       color: C.textMuted,
@@ -285,9 +304,6 @@ function makeStyles(C) {
       alignItems: 'center',
       justifyContent: 'center',
     },
-    sectionIconText: {
-      fontSize: 18,
-    },
     sectionTitles: {
       flex: 1,
       gap: 1,
@@ -313,9 +329,6 @@ function makeStyles(C) {
       alignItems: 'center',
       gap: 10,
     },
-    questEmoji: {
-      fontSize: 26,
-    },
     questInfo: {
       flex: 1,
       gap: 3,
@@ -331,7 +344,11 @@ function makeStyles(C) {
       fontWeight: '700',
       flexShrink: 1,
     },
-    vipChip: {
+    vipChipRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+      backgroundColor: C.gold + '22',
       borderRadius: 6,
       paddingHorizontal: 6,
       paddingVertical: 2,
@@ -350,6 +367,9 @@ function makeStyles(C) {
       gap: 6,
     },
     rewardChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
       borderRadius: 6,
       paddingHorizontal: 7,
       paddingVertical: 2,
@@ -396,6 +416,9 @@ function makeStyles(C) {
       fontWeight: '800',
     },
     doneChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
       borderRadius: 8,
       paddingHorizontal: 10,
       paddingVertical: 4,
@@ -417,9 +440,6 @@ function makeStyles(C) {
       alignItems: 'center',
       gap: 8,
     },
-    vipBannerEmoji: {
-      fontSize: 22,
-    },
     vipBannerTitle: {
       color: C.text,
       fontSize: 15,
@@ -436,10 +456,28 @@ function makeStyles(C) {
       borderWidth: 1,
       padding: 12,
     },
+    vipActiveRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
     vipActiveText: {
+      flex: 1,
       fontSize: 12,
       fontWeight: '700',
       lineHeight: 18,
+    },
+    offlineRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+    },
+    offlineText: {
+      flex: 1,
+      color: C.text,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: '600',
     },
     offlineBox: {
       backgroundColor: C.danger + '18',
@@ -448,18 +486,18 @@ function makeStyles(C) {
       borderColor: C.danger + '66',
       padding: 12,
     },
-    offlineText: {
-      color: C.text,
-      fontSize: 12,
-      lineHeight: 18,
-      fontWeight: '600',
-    },
     noteBox: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
       backgroundColor: C.surface,
       borderRadius: 14,
       borderWidth: 1,
       borderColor: C.border,
       padding: 14,
+    },
+    noteIcon: {
+      marginTop: 2,
     },
     noteText: {
       color: C.textMuted,

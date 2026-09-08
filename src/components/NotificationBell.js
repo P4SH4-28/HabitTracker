@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useData } from '../context/DataContext';
 import { useTheme } from '../theme';
 import AvatarCircle from './AvatarCircle';
+import Icon from './ui/icons';
 import Sheet from './Sheet';
 
 // Home üst satırındaki bildirim zili: gelen arkadaşlık isteklerini
@@ -30,7 +31,7 @@ export default function NotificationBell() {
   return (
     <>
       <Pressable style={styles.bellWrap} onPress={() => setVisible(true)} hitSlop={8}>
-        <Text style={styles.bell}>🔔</Text>
+        <Icon emoji="🔔" size={18} color={C.text} />
         {count > 0 && (
           <View style={styles.badge}>
             <Text style={styles.badgeText}>{count > 9 ? '9+' : count}</Text>
@@ -41,7 +42,7 @@ export default function NotificationBell() {
       <Sheet visible={visible} onClose={() => setVisible(false)} title="Gelen İstekler">
         {count === 0 ? (
           <View style={styles.emptyBox}>
-            <Text style={styles.emptyEmoji}>🔕</Text>
+            <Icon emoji="🔕" size={40} color={C.textMuted} />
             <Text style={styles.emptyText}>Bekleyen istek yok</Text>
             <Text style={styles.emptySub}>
               Birisi sana istek gönderince burada görünür.
@@ -61,9 +62,13 @@ export default function NotificationBell() {
                 <Text style={styles.rowName} numberOfLines={1}>
                   {r.name}
                 </Text>
-                <Text style={styles.rowMeta}>
-                  🔥 {r.streak} • ⚡ {r.totalXp} XP
-                </Text>
+                <View style={styles.rowMeta}>
+                <Icon emoji="🔥" size={12} color={C.textMuted} />
+                <Text style={styles.rowMetaText}>{r.streak}</Text>
+                <Text style={styles.rowMetaDot}>•</Text>
+                <Icon emoji="⚡" size={12} color={C.textMuted} />
+                <Text style={styles.rowMetaText}>{r.totalXp} XP</Text>
+              </View>
               </View>
               <View style={styles.actions}>
                 <Pressable
@@ -154,8 +159,19 @@ function makeStyles(C) {
       fontWeight: '700',
     },
     rowMeta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    rowMetaText: {
       color: C.textMuted,
       fontSize: 12,
+    },
+    rowMetaDot: {
+      color: C.textMuted,
+      fontSize: 12,
+      opacity: 0.5,
+      marginHorizontal: 2,
     },
     actions: {
       flexDirection: 'row',

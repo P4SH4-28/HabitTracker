@@ -10,6 +10,7 @@
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../theme';
+import IconTile from './ui/IconTile';
 
 // Kalan süreyi "3g 4s" / "1s 12dk" biçiminde gösterir.
 function formatRemaining(endsAt) {
@@ -34,11 +35,11 @@ export default function DuelCard({ duel, onAccept, onDecline, onFinish }) {
     // Gelen davet: kabul / red.
     return (
       <View style={[styles.card, { borderColor: C.accent }]}>
-        <Text style={styles.emoji}>⚔️</Text>
+        <IconTile icon="swords" emoji="⚔️" variant="danger" size={54} iconSize={24} />
         <View style={styles.body}>
           <Text style={styles.title}>{duel.opponent} seni düelloya davet etti!</Text>
           <Text style={styles.desc}>
-            7 günlük XP yarışı — kazanan +100 XP ve +50 🪙 kazanır.
+            7 günlük XP yarışı — kazanan +100 XP ve +50 altın kazanır.
           </Text>
           <View style={styles.actions}>
             <Pressable style={styles.acceptBtn} onPress={() => onAccept(duel.id)}>
@@ -61,7 +62,7 @@ export default function DuelCard({ duel, onAccept, onDecline, onFinish }) {
 
   return (
     <View style={[styles.card, { borderColor: C.border }]}>
-      <Text style={styles.emoji}>⚔️</Text>
+      <IconTile icon="swords" emoji="⚔️" variant="glass" size={54} iconSize={24} />
       <View style={styles.body}>
         <Text style={styles.title}>
           {duel.status === 'pending'
@@ -82,7 +83,10 @@ export default function DuelCard({ duel, onAccept, onDecline, onFinish }) {
             </View>
             {finished ? (
               <Pressable style={styles.acceptBtn} onPress={() => onFinish(duel.id)}>
-                <Text style={styles.acceptText}>Sonucu Gör 🏆</Text>
+                <View style={styles.finishBtnContent}>
+                  <Text style={styles.acceptText}>Sonucu Gör</Text>
+                  <IconTile icon="trophy" emoji="🏆" variant="gold" size={18} iconSize={10} />
+                </View>
               </Pressable>
             ) : null}
           </>
@@ -102,9 +106,6 @@ function makeStyles(C) {
       padding: 14,
       gap: 12,
       alignItems: 'center',
-    },
-    emoji: {
-      fontSize: 28,
     },
     body: {
       flex: 1,
@@ -135,6 +136,11 @@ function makeStyles(C) {
       color: C.onPrimary,
       fontSize: 13,
       fontWeight: '800',
+    },
+    finishBtnContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
     },
     declineBtn: {
       backgroundColor: C.surfaceLight,

@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import AddFriendModal from '../components/AddFriendModal';
 import AvatarCircle from '../components/AvatarCircle';
+import Icon from '../components/ui/icons';
+import IconTile from '../components/ui/IconTile';
 import { confirmDialog } from '../components/HabitCard';
 import DuelCard from '../components/DuelCard';
 import PlayerProfileModal from '../components/PlayerProfileModal';
@@ -31,7 +33,7 @@ export default function FriendsScreen() {
   const startDuel = async (name) => {
     confirmDialog(
       'Düello daveti',
-      `${name} ile 7 günlük XP yarışı başlatılsın mı? Kazanan +100 XP ve +50 🪙 kazanır.`,
+      `${name} ile 7 günlük XP yarışı başlatılsın mı? Kazanan +100 XP ve +50 altın kazanır.`,
       async () => {
         const r = await challengeDuel(name);
         if (!r.ok && r.error) confirmDialog('Bilgi', r.error, null);
@@ -79,8 +81,9 @@ export default function FriendsScreen() {
       )}
       {data.friends.length > 0 && (
         <View style={styles.noteBox}>
+          <Icon emoji="💡" size={13} color={C.primary} style={styles.noteIcon} />
           <Text style={styles.noteText}>
-            💡 Arkadaşına dokunarak profilini ziyaret edebilir, ⚔️ ile 7 günlük düello
+            Arkadaşına dokunarak profilini ziyaret edebilir, ⚔️ ile 7 günlük düello
             başlatabilirsin. Liderlik tablosundan da arkadaşlık isteği gönderebilirsin.
           </Text>
         </View>
@@ -131,11 +134,11 @@ export default function FriendsScreen() {
                 </Text>
                 <View style={styles.metaRow}>
                   <View style={styles.metaItem}>
-                    <Text style={styles.metaIcon}>🔥</Text>
+                    <Icon emoji="🔥" size={12} color={C.accent} />
                     <Text style={styles.metaText}>{item.streak} gün seri</Text>
                   </View>
                   <View style={styles.metaItem}>
-                    <Text style={styles.metaIcon}>⚡</Text>
+                    <Icon emoji="⚡" size={12} color={C.primary} />
                     <Text style={styles.metaText}>{item.totalXp} XP</Text>
                   </View>
                 </View>
@@ -146,7 +149,7 @@ export default function FriendsScreen() {
                 onPress={() => startDuel(item.name)}
                 hitSlop={6}
               >
-                <Text style={styles.duelBtnText}>⚔️</Text>
+                <Icon emoji="⚔️" size={15} color={C.danger} />
               </Pressable>
               <View
                 style={[
@@ -159,7 +162,7 @@ export default function FriendsScreen() {
         }}
         ListEmptyComponent={
           <View style={styles.emptyBox}>
-            <Text style={styles.emptyEmoji}>👥</Text>
+            <IconTile icon="people" emoji="👥" variant="primary" size={64} iconSize={28} />
             <Text style={styles.emptyTitle}>Henüz arkadaş yok</Text>
             <Text style={styles.emptyText}>
               Arkadaş ekleyerek liderlik tablosunda rekabet etmeye başla. Uzun basarak
@@ -218,11 +221,17 @@ function makeStyles(C) {
       fontWeight: '800',
     },
     noteBox: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
       backgroundColor: C.surface,
       borderRadius: 14,
       borderWidth: 1,
       borderColor: C.border,
       padding: 14,
+    },
+    noteIcon: {
+      marginTop: 2,
     },
     noteText: {
       color: C.textMuted,
@@ -255,9 +264,6 @@ function makeStyles(C) {
       paddingHorizontal: 10,
       paddingVertical: 8,
     },
-    duelBtnText: {
-      fontSize: 14,
-    },
     duelSection: {
       gap: 10,
     },
@@ -279,9 +285,6 @@ function makeStyles(C) {
       alignItems: 'center',
       gap: 4,
     },
-    metaIcon: {
-      fontSize: 12,
-    },
     metaText: {
       color: C.textMuted,
       fontSize: 12,
@@ -295,10 +298,7 @@ function makeStyles(C) {
       alignItems: 'center',
       paddingVertical: 50,
       paddingHorizontal: 24,
-    },
-    emptyEmoji: {
-      fontSize: 44,
-      marginBottom: 12,
+      gap: 10,
     },
     emptyTitle: {
       color: C.text,

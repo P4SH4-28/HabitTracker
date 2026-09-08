@@ -1,16 +1,18 @@
 // ============================================================
 // PressableFX.js — Basınç geri bildirimli dokunulabilir sarmalayıcı.
-// Birleşik deneyim:
-//   - Basınçta küçük ölçek (şişme değil, hafif küçülme) animasyonu
+// Premium mikro-etkileşim:
+//   - Basınçta yumuşak spring küçülme (0.96 varsayılan, prop ile değişir)
 //   - Çok hafif "tap" haptiği (cihazda)
-// contentContainerStyle ile dış tasarım stillerini geçirebilirsin.
-// Normal Pressable'a 1:1 alternatif olarak kullanılabilir (style prop
-// fonksiyon destekli değildir; harici kart hâline getirildiğinde style
-// prop'una çözülmüş stil nesnesi verilir).
+//   - Reanimated (UI thread) ile akıcı animasyon
+// Normal Pressable'a 1:1 alternatiftir (style prop'u çözülmüş stil bekler;
+// children bir render-props olabilir: ({ pressed }) => node).
 // ============================================================
 import { useRef } from 'react';
-import { Animated, Pressable } from 'react-native';
+import { Pressable } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { tap } from '../services/sfx';
+
+const SPRING = { damping: 18, stiffness: 340, mass: 0.8 };
 
 export default function PressableFX({
   children,
@@ -23,28 +25,25 @@ export default function PressableFX({
   style,
   ...rest
 }) {
-  const anim = useRef(new Animated.Value(1)).current;
+  const tapGuard = useRef(0);
+  const anim = useSharedValue(1);
+
   const handlePressIn = (e) => {
     if (disabled) return;
-    Animated.spring(anim, {
-      toValue: scale,
-      speed: 40,
-      bounciness: 0,
-      useNativeDriver: true,
-    }).start();
+    anim.value = withSpring(scale, SPRING);
     if (haptic) tap();
     if (onPressIn) onPressIn(e);
   };
 
   const handlePressOut = (e) => {
-    Animated.spring(anim, {
-      toValue: 1,
-      speed: 40,
-      bounciness: 0,
-      useNativeDriver: true,
-    }).start();
+    anim.value = withSpring(1, SPRING);
     if (onPressOut) onPressOut(e);
   };
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: anim.value }],
+    opacity: anim.value < 1 ? 0.92 : 1,
+  }));
 
   return (
     <Pressable
@@ -54,11 +53,9 @@ export default function PressableFX({
       disabled={disabled}
       {...rest}
     >
-      {({ pressed }) => (
-        <Animated.View
-          style={[style, { transform: [{ scale: anim }] }, pressed && { opacity: 0.9 }]}
-        >
-          {typeof children === 'function' ? children({ pressed }) : children}
+      {({ pressed: p }) => (
+        <Animated.View style={[style, animatedStyle]}>
+          {typeof children === 'function' ? children({ pressed: p }) : children}
         </Animated.View>
       )}
     </Pressable>

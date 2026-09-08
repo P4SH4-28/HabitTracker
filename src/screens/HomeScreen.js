@@ -10,16 +10,20 @@
 // ============================================================
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import AddHabitModal from '../components/AddHabitModal';
 import AnimatedCounter from '../components/AnimatedCounter';
 import AvatarCircle from '../components/AvatarCircle';
-import memoizedHabitCard from '../components/memoizedHabitCard';
+import Card from '../components/Card';
+import MemoizedHabitCard from '../components/memoizedHabitCard';
 import NotificationBell from '../components/NotificationBell';
 import PomodoroTimer from '../components/PomodoroTimer';
 import PressableFX from '../components/PressableFX';
 import Sheet from '../components/Sheet';
 import XpBar from '../components/XpBar';
+import Icon from '../components/ui/icons';
+import IconTile from '../components/ui/IconTile';
 import { useData } from '../context/DataContext';
 import { canClaimQuest, getDailyQuests, questClaimedToday } from '../data/quests';
 import { STARTER_HABITS } from '../data/starterHabits';
@@ -32,7 +36,7 @@ import {
 import { useTheme } from '../theme';
 
 export default function HomeScreen() {
-  const { colors: C } = useTheme();
+  const { colors: C, glow } = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
   const { data, today, toggleHabit, deleteHabit, addHabit, refreshServer, refreshing, pushToast } =
     useData();
@@ -99,7 +103,10 @@ export default function HomeScreen() {
     <View style={styles.header}>
       <View style={styles.topRow}>
         <View style={styles.topText}>
-          <Text style={styles.greeting}>{greeting} 👋</Text>
+          <View style={styles.greetingRow}>
+            <Text style={styles.greeting}>{greeting}</Text>
+            <Icon emoji="👋" size={18} color={C.text} />
+          </View>
           <Text style={styles.subGreeting}>
             {total > 0
               ? `Bugün ${doneToday}/${total} alışkanlığını tamamladın`
@@ -118,12 +125,12 @@ export default function HomeScreen() {
             ringColor={C.primary}
           />
           <View style={styles.goldChip}>
-            <Text style={styles.goldIcon}>🪙</Text>
+            <Icon emoji="🪙" size={13} color={C.gold} />
             <AnimatedCounter value={stats.gold || 0} style={styles.goldText} />
           </View>
         </View>
       </View>
-      <View style={styles.card}>
+      <Card>
         <XpBar
           level={levelInfo.level}
           curXp={levelInfo.curXp}
@@ -131,18 +138,28 @@ export default function HomeScreen() {
           todayXp={stats.day?.key === today ? stats.day.xpEarned || 0 : 0}
           todayCap={DAILY_XP_CAP}
         />
-      </View>
-      <PressableFX style={styles.questCard} onPress={() => navigation.navigate('QuestBoard')}>
+      </Card>
+      <Card
+        style={styles.questCard}
+        glowColor={C.primary}
+        onPress={() => navigation.navigate('QuestBoard')}
+      >
         <View style={styles.questCardTop}>
-          <Text style={styles.questCardTitle}>🎯 Günün Görevleri</Text>
+          <View style={styles.questTitleRow}>
+            <Icon emoji="🎯" size={16} color={C.primary} />
+            <Text style={styles.questCardTitle}>Günün Görevleri</Text>
+          </View>
           {questSummary.readyCount > 0 ? (
-            <View style={[styles.questReadyChip, { backgroundColor: C.accent + '22' }]}>
+            <View style={[styles.questReadyChip, { backgroundColor: C.accent + '1F' }]}>
               <Text style={[styles.questReadyText, { color: C.accent }]}>
                 {questSummary.readyCount} hazır
               </Text>
             </View>
           ) : (
-            <Text style={styles.questWaitText}>⏳ beklemede</Text>
+            <View style={styles.questWaitRow}>
+              <Icon emoji="⏳" size={12} color={C.textMuted} />
+              <Text style={styles.questWaitText}>beklemede</Text>
+            </View>
           )}
         </View>
         <Text style={styles.questCardHint}>
@@ -151,32 +168,37 @@ export default function HomeScreen() {
             : 'Henüz görev bitirmedin'}{' '}
           • Görevler her gün sıfırlanır →
         </Text>
-      </PressableFX>
+      </Card>
       <PomodoroTimer />
-      <View style={styles.todayCard}>
+      <Card style={styles.todayCard}>
         <View style={styles.todayHeader}>
           <Text style={styles.todayTitle}>Bugünkü İlerleme</Text>
           <Text style={styles.todayValue}>%{Math.round(pct * 100)}</Text>
         </View>
         <View style={styles.todayTrack}>
-          <View style={[styles.todayFill, { width: `${pct * 100}%` }]} />
+          <LinearGradient
+            colors={[C.accent, C.primary]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={[styles.todayFill, { width: `${pct * 100}%` }]}
+          />
         </View>
         {/* Özet bloğu: en uzun seri · bugün XP · tamamlanan */}
         <View style={styles.summaryRow}>
           <View style={styles.summaryItem}>
-            <Text style={styles.summaryIcon}>🔥</Text>
+            <Icon emoji="🔥" size={15} color={C.textMuted} />
             <AnimatedCounter value={bestStreakValue} style={styles.summaryValue} />
             <Text style={styles.summaryLabel}>En uzun seri</Text>
           </View>
           <View style={styles.summaryDivider} />
           <View style={styles.summaryItem}>
-            <Text style={styles.summaryIcon}>⚡</Text>
+            <Icon emoji="⚡" size={15} color={C.textMuted} />
             <AnimatedCounter value={todayXp} style={styles.summaryValue} />
             <Text style={styles.summaryLabel}>Bugün XP</Text>
           </View>
           <View style={styles.summaryDivider} />
           <View style={styles.summaryItem}>
-            <Text style={styles.summaryIcon}>✅</Text>
+            <Icon emoji="✅" size={15} color={C.textMuted} />
             <Text style={styles.summaryValue}>
               <AnimatedCounter value={doneToday} style={styles.summaryValue} />/{total}
             </Text>
@@ -186,7 +208,7 @@ export default function HomeScreen() {
         <Text style={styles.todayHint}>
           Alışkanlık başına +{settings.xpPerHabit} XP kazanırsın
         </Text>
-      </View>
+      </Card>
       <Text style={styles.sectionTitle}>Alışkanlıklar ({habits.length})</Text>
     </View>
   );
@@ -198,9 +220,9 @@ export default function HomeScreen() {
       <FlatList
         data={habits}
         keyExtractor={(item) => item.id}
-        getItemLayout={(item, index) => `x=${styles.listContent.left} y=${index * itemHeight} width=${styles.listContent.itemWidth} height=${itemHeight}`}
+        getItemLayout={(data, index) => ({ length: itemHeight, offset: index * itemHeight, index })}
         renderItem={({ item }) => (
-          <memoizedHabitCard habit={item} today={today} onToggle={toggleHabit} onDelete={confirmDelete} />
+          <MemoizedHabitCard habit={item} today={today} onToggle={toggleHabit} onDelete={confirmDelete} />
         )}
         ListHeaderComponent={header}
         contentContainerStyle={styles.listContent}
@@ -216,12 +238,17 @@ export default function HomeScreen() {
           />
         }
         ListEmptyComponent={
-          <EmptyState C={C} styles={styles} onQuickAdd={quickAdd} />
+          <EmptyState C={C} styles={styles} glow={glow} onQuickAdd={quickAdd} />
         }
       />
-      {/* Yeni alışkanlık ekleme butonu (FAB) */}
-      <PressableFX style={styles.fab} scale={0.9} haptic onPress={() => setModalVisible(true)}>
-        <Text style={styles.fabIcon}>+</Text>
+      {/* Yeni alışkanlık ekleme butonu (FAB) — gradient + indigo glow */}
+      <PressableFX style={styles.fab} scale={0.92} haptic onPress={() => setModalVisible(true)}>
+        <LinearGradient
+          colors={[C.primary, C.primaryDark]}
+          style={styles.fabGradient}
+        >
+          <Text style={styles.fabIcon}>+</Text>
+        </LinearGradient>
       </PressableFX>
       <AddHabitModal
         visible={modalVisible}
@@ -261,7 +288,7 @@ export default function HomeScreen() {
 
 // Boş durum: kullanıcıyı tek dokunuşla başlatmak için zıplayan 🌱
 // ve hazır "Hızlı başlangıç" alışkanlık çipleri gösterir.
-function EmptyState({ C, styles, onQuickAdd }) {
+function EmptyState({ C, styles, glow, onQuickAdd }) {
   const bounce = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -277,9 +304,8 @@ function EmptyState({ C, styles, onQuickAdd }) {
 
   return (
     <View style={styles.emptyBox}>
-      <Animated.Text
+      <Animated.View
         style={[
-          styles.emptyEmoji,
           {
             transform: [
               { translateY: bounce.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, -20, 0] }) },
@@ -287,8 +313,8 @@ function EmptyState({ C, styles, onQuickAdd }) {
           },
         ]}
       >
-        🌱
-      </Animated.Text>
+        <IconTile emoji="🌱" variant="accent" size={66} />
+      </Animated.View>
       <Text style={styles.emptyTitle}>İlk alışkanlığını ekle</Text>
       <Text style={styles.emptyText}>
         Hazır bir başlangıç seç veya + butonuna dokun. Her tamamlama XP + altın kazandırır!
@@ -297,7 +323,11 @@ function EmptyState({ C, styles, onQuickAdd }) {
         {STARTER_HABITS.map((h) => (
           <PressableFX
             key={h.name}
-            style={[styles.starterChip, { borderColor: h.color + '66' }]}
+            style={[
+              styles.starterChip,
+              { borderColor: h.color + '55' },
+              glow(h.color, { opacity: 0.22, radius: 12, offset: 4, elevation: 5 }),
+            ]}
             onPress={() => onQuickAdd(h)}
           >
             <Text style={styles.starterEmoji}>{h.emoji}</Text>
@@ -324,6 +354,11 @@ function makeStyles(C) {
       color: C.text,
       fontSize: 22,
       fontWeight: '800',
+    },
+    greetingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
     },
     topRow: {
       flexDirection: 'row',
@@ -395,6 +430,11 @@ function makeStyles(C) {
       fontSize: 14,
       fontWeight: '800',
     },
+    questTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
     questReadyChip: {
       borderRadius: 8,
       paddingHorizontal: 10,
@@ -408,6 +448,11 @@ function makeStyles(C) {
       color: C.textMuted,
       fontSize: 11,
       fontWeight: '700',
+    },
+    questWaitRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
     },
     questCardHint: {
       color: C.textMuted,
@@ -467,7 +512,6 @@ function makeStyles(C) {
     todayFill: {
       height: '100%',
       borderRadius: 5,
-      backgroundColor: C.accent,
     },
     todayHint: {
       color: C.textMuted,
@@ -488,19 +532,22 @@ function makeStyles(C) {
       position: 'absolute',
       right: 20,
       bottom: 24,
-      width: 60,
-      height: 60,
-      borderRadius: 30,
-      backgroundColor: C.primary,
-      borderWidth: 2,
-      borderColor: C.primaryDark,
+      width: 64,
+      height: 64,
+      shadowColor: C.primary,
+      shadowOpacity: 0.55,
+      shadowRadius: 16,
+      shadowOffset: { width: 0, height: 6 },
+      elevation: 12,
+    },
+    fabGradient: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.15)',
       alignItems: 'center',
       justifyContent: 'center',
-      shadowColor: C.primary,
-      shadowOpacity: 0.6,
-      shadowRadius: 14,
-      shadowOffset: { width: 0, height: 5 },
-      elevation: 12,
     },
     fabIcon: {
       color: C.onPrimary,
@@ -541,8 +588,10 @@ function makeStyles(C) {
     },
     confirmBtn: {
       flex: 1,
-      borderRadius: 12,
-      paddingVertical: 12,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: C.border,
+      paddingVertical: 13,
       alignItems: 'center',
     },
     confirmBtnMuted: {

@@ -32,6 +32,7 @@ import { getLottieSource } from '../components/AvatarCircle';
 import { getFrame } from '../data/shop';
 import { serverNow } from '../services/serverClock';
 import { useTheme } from '../theme';
+import Icon from '../components/ui/icons';
 
 export default function SeasonPassScreen() {
   const { data, claimPassReward, buyVip, vipActive } = useData();
@@ -80,14 +81,29 @@ export default function SeasonPassScreen() {
     let preview = null;
     if (reward) {
       if (reward.type === 'gold') {
-        preview = <Text style={styles.previewGold}>🪙 {reward.amount}</Text>;
+        preview = (
+          <View style={styles.previewCoinRow}>
+            <Icon emoji="🪙" size={20} color={C.gold} />
+            <Text style={styles.previewGold}>{reward.amount}</Text>
+          </View>
+        );
       } else if (reward.type === 'badge') {
         const badge = BADGES[reward.badgeId];
-        preview = badge ? <Text style={styles.previewBadge}>{badge.emoji}</Text> : null;
+        preview = badge ? <Icon emoji={badge.emoji} size={30} color={C.gold} /> : null;
       } else if (reward.type === 'theme') {
-        preview = <Text style={styles.previewTheme}>🎨 Tema</Text>;
+        preview = (
+          <View style={styles.previewTextRow}>
+            <Icon emoji="🎨" size={14} color={C.text} />
+            <Text style={styles.previewTheme}>Tema</Text>
+          </View>
+        );
       } else if (reward.type === 'avatar') {
-        preview = <Text style={styles.previewAvatar}>🖼️ Avatar</Text>;
+        preview = (
+          <View style={styles.previewTextRow}>
+            <Icon emoji="🖼️" size={14} color={C.text} />
+            <Text style={styles.previewAvatar}>Avatar</Text>
+          </View>
+        );
       } else if (reward.type === 'lottieFrame') {
         const frame = getFrame(reward.frameId);
         const source = getLottieSource(reward.frameId);
@@ -103,7 +119,12 @@ export default function SeasonPassScreen() {
         );
       } else if (reward.type === 'frame') {
         const frame = getFrame(reward.frameId);
-        preview = <Text style={styles.previewTheme}>{frame?.emoji || '🖼️'} Çerçeve</Text>;
+        preview = frame ? (
+          <View style={styles.previewTextRow}>
+            <Icon emoji={frame.emoji} size={14} color={C.text} />
+            <Text style={styles.previewTheme}>Çerçeve</Text>
+          </View>
+        ) : null;
       }
     }
 
@@ -119,7 +140,10 @@ export default function SeasonPassScreen() {
         <View style={styles.boxPreview}>{preview || <Text style={styles.previewEmpty}>?</Text>}</View>
         <View style={styles.boxInfo}>
           <Text style={[styles.boxTrack, { color: accent }]}>
-            {isVip ? '👑 VIP' : 'Free'}
+            {isVip ? (
+              <Icon emoji="👑" size={11} color={accent} style={styles.inlineIcon} />
+            ) : null}
+            {isVip ? ' VIP' : 'Free'}
           </Text>
           <Text style={styles.boxReward} numberOfLines={2}>
             {reward ? rewardLabel(reward) : '—'}
@@ -131,7 +155,8 @@ export default function SeasonPassScreen() {
           </View>
         ) : lockLabel ? (
           <View style={styles.lockChip}>
-            <Text style={styles.lockChipText}>🔒 {lockLabel}</Text>
+            <Icon emoji="🔒" size={11} color={C.textMuted} />
+            <Text style={styles.lockChipText}>{lockLabel}</Text>
           </View>
         ) : (
           <Pressable
@@ -156,7 +181,10 @@ export default function SeasonPassScreen() {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      <Text style={styles.screenTitle}>🎖️ Season Pass</Text>
+      <View style={styles.screenTitleRow}>
+        <Icon emoji="🎖️" size={20} color={C.gold} />
+        <Text style={styles.screenTitle}>Season Pass</Text>
+      </View>
       <Text style={styles.screenSub}>{PASS_NAME}</Text>
 
       {/* Seviye ilerleme kartı */}
@@ -196,7 +224,7 @@ export default function SeasonPassScreen() {
       {/* VIP durum / satın alma kartı */}
       {vipActive ? (
         <View style={[styles.vipActiveCard, { borderColor: C.gold + '55' }]}>
-          <Text style={styles.vipActiveEmoji}>👑</Text>
+          <Icon emoji="👑" size={30} color={C.gold} />
           <View style={styles.vipActiveInfo}>
             <Text style={[styles.vipActiveTitle, { color: C.gold }]}>VIP aktif</Text>
             <Text style={styles.vipActiveText}>
@@ -210,7 +238,7 @@ export default function SeasonPassScreen() {
           onPress={handleBuyVip}
           disabled={buying}
         >
-          <Text style={styles.buyVipEmoji}>👑</Text>
+          <Icon emoji="👑" size={34} color={C.gold} />
           <View style={styles.buyVipInfo}>
             <Text style={styles.buyVipTitle}>VIP üyeliği al</Text>
             <Text style={styles.buyVipText}>
@@ -218,7 +246,10 @@ export default function SeasonPassScreen() {
               Season Pass VIP ödüllerine erişim.
             </Text>
             <View style={styles.buyVipBottom}>
-              <Text style={[styles.buyVipPrice, { color: C.gold }]}>🪙 {VIP_PRICE_GOLD}</Text>
+              <View style={styles.buyVipPriceRow}>
+                <Icon emoji="🪙" size={13} color={C.gold} />
+                <Text style={[styles.buyVipPrice, { color: C.gold }]}>{VIP_PRICE_GOLD}</Text>
+              </View>
               {buying ? (
                 <ActivityIndicator size="small" color={C.gold} />
               ) : (
@@ -228,9 +259,12 @@ export default function SeasonPassScreen() {
               )}
             </View>
             {gold < VIP_PRICE_GOLD && (
-              <Text style={styles.buyVipWarn}>
-                {VIP_PRICE_GOLD - gold} 🪙 daha lazım (bakiyen: {gold})
-              </Text>
+              <View style={styles.buyVipWarnRow}>
+                <Icon emoji="🪙" size={11} color={C.danger} />
+                <Text style={styles.buyVipWarn}>
+                  {VIP_PRICE_GOLD - gold} daha lazım (bakiyen: {gold})
+                </Text>
+              </View>
             )}
           </View>
         </Pressable>
@@ -262,8 +296,9 @@ export default function SeasonPassScreen() {
       </View>
 
       <View style={styles.noteBox}>
+        <Icon emoji="💡" size={13} color={C.primary} style={styles.noteIcon} />
         <Text style={styles.noteText}>
-          💡 Pass seviyen toplam XP'nle otomatik yükselir. Ödül kutuları seviyeye
+          Pass seviyen toplam XP'nle otomatik yükselir. Ödül kutuları seviyeye
           ulaştığında açılır; VIP kutuları yalnızca aktif VIP üyelere verilir.
         </Text>
       </View>
@@ -286,6 +321,11 @@ function makeStyles(C) {
       color: C.text,
       fontSize: 24,
       fontWeight: '800',
+    },
+    screenTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
     },
     screenSub: {
       color: C.textMuted,
@@ -353,9 +393,6 @@ function makeStyles(C) {
       borderWidth: 1,
       padding: 16,
     },
-    vipActiveEmoji: {
-      fontSize: 30,
-    },
     vipActiveInfo: {
       flex: 1,
       gap: 3,
@@ -378,9 +415,6 @@ function makeStyles(C) {
       borderWidth: 1,
       padding: 16,
     },
-    buyVipEmoji: {
-      fontSize: 34,
-    },
     buyVipInfo: {
       flex: 1,
       gap: 4,
@@ -401,6 +435,11 @@ function makeStyles(C) {
       justifyContent: 'space-between',
       marginTop: 4,
     },
+    buyVipPriceRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
     buyVipPrice: {
       fontSize: 14,
       fontWeight: '800',
@@ -414,6 +453,12 @@ function makeStyles(C) {
       color: C.background,
       fontSize: 13,
       fontWeight: '900',
+    },
+    buyVipWarnRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      marginTop: 4,
     },
     buyVipWarn: {
       color: C.danger,
@@ -480,8 +525,18 @@ function makeStyles(C) {
       fontSize: 22,
       fontWeight: '800',
     },
+    previewCoinRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+    },
     previewBadge: {
       fontSize: 30,
+    },
+    previewTextRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
     },
     previewTheme: {
       fontSize: 14,
@@ -532,22 +587,34 @@ function makeStyles(C) {
       fontWeight: '900',
     },
     lockChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 4,
       borderRadius: 8,
       backgroundColor: C.surfaceLight,
       paddingVertical: 6,
-      alignItems: 'center',
     },
     lockChipText: {
       color: C.textMuted,
       fontSize: 9,
       fontWeight: '700',
     },
+    inlineIcon: {
+      // gap handles spacing between icon and label
+    },
     noteBox: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
       backgroundColor: C.surface,
       borderRadius: 14,
       borderWidth: 1,
       borderColor: C.border,
       padding: 14,
+    },
+    noteIcon: {
+      marginTop: 2,
     },
     noteText: {
       color: C.textMuted,

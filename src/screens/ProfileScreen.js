@@ -14,6 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { ACHIEVEMENTS } from '../data/achievements';
 import { levelFromTotalXp, bestStreak } from '../logic';
+import Icon from '../components/ui/icons';
 import { pickProfilePhoto, removeProfilePhoto, uploadProfilePhoto } from '../services/avatarService';
 import { useTheme } from '../theme';
 
@@ -81,7 +82,7 @@ export default function ProfileScreen() {
             size={120}
           />
           <View style={styles.photoBadge}>
-            <Text style={styles.photoBadgeText}>{photoBusy ? '⏳' : '📷'}</Text>
+            <Icon emoji={photoBusy ? '⏳' : '📷'} size={13} color={C.onPrimary} />
           </View>
         </Pressable>
       </View>
@@ -112,8 +113,14 @@ export default function ProfileScreen() {
         ) : (
           <Pressable style={styles.bioBox} onPress={() => setEditingBio(true)}>
             <Text style={styles.bioText} numberOfLines={4}>
-              {settings.bio || 'Bio ekle ✏️'}
+              {settings.bio || 'Bio ekle'}
             </Text>
+            {!settings.bio ? (
+              <View style={styles.bioHintRow}>
+                <Icon emoji="✏️" size={12} color={C.textMuted} />
+                <Text style={styles.bioHintText}>dokun ve yaz</Text>
+              </View>
+            ) : null}
           </Pressable>
         )}
       </View>
@@ -122,19 +129,31 @@ export default function ProfileScreen() {
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
           <AnimatedCounter value={streak} style={styles.statValue} />
-          <Text style={styles.statLabel}>🔥 Seri</Text>
+          <View style={styles.statLabelRow}>
+            <Icon emoji="🔥" size={10} color={C.accent} />
+            <Text style={styles.statLabel}>Seri</Text>
+          </View>
         </View>
         <View style={styles.statCard}>
           <AnimatedCounter value={stats.totalCompletions || 0} style={styles.statValue} />
-          <Text style={styles.statLabel}>✅ Tamamlama</Text>
+          <View style={styles.statLabelRow}>
+            <Icon emoji="✅" size={10} color={C.accent} />
+            <Text style={styles.statLabel}>Tamamlama</Text>
+          </View>
         </View>
         <View style={styles.statCard}>
           <AnimatedCounter value={stats.totalXp} style={styles.statValue} />
-          <Text style={styles.statLabel}>⚡ XP</Text>
+          <View style={styles.statLabelRow}>
+            <Icon emoji="⚡" size={10} color={C.xp} />
+            <Text style={styles.statLabel}>XP</Text>
+          </View>
         </View>
         <View style={styles.statCard}>
           <AnimatedCounter value={stats.gold || 0} style={styles.statValue} />
-          <Text style={styles.statLabel}>🪙 Altın</Text>
+          <View style={styles.statLabelRow}>
+            <Icon emoji="🪙" size={10} color={C.gold} />
+            <Text style={styles.statLabel}>Altın</Text>
+          </View>
         </View>
       </View>
 
@@ -157,24 +176,24 @@ export default function ProfileScreen() {
 
         <View style={styles.summaryGrid}>
           <View style={styles.summaryCell}>
-            <Text style={styles.summaryEmoji}>📅</Text>
+            <Icon emoji="📅" size={15} color={C.primary} />
             <Text style={styles.summaryCellValue}>{habits.length}</Text>
             <Text style={styles.summaryCellLabel}>Aktif alışkanlık</Text>
           </View>
           <View style={styles.summaryCell}>
-            <Text style={styles.summaryEmoji}>🎯</Text>
+            <Icon emoji="🎯" size={15} color={C.primary} />
             <Text style={styles.summaryCellValue}>
               {doneToday}/{habits.length || 0}
             </Text>
             <Text style={styles.summaryCellLabel}>Bugün tamamlanan</Text>
           </View>
           <View style={styles.summaryCell}>
-            <Text style={styles.summaryEmoji}>🍅</Text>
+            <Icon emoji="🍅" size={15} color={C.accent} />
             <Text style={styles.summaryCellValue}>{stats.pomodoroCount || 0}</Text>
             <Text style={styles.summaryCellLabel}>Odak seansı</Text>
           </View>
           <View style={styles.summaryCell}>
-            <Text style={styles.summaryEmoji}>🏆</Text>
+            <Icon emoji="🏆" size={15} color={C.gold} />
             <Text style={styles.summaryCellValue}>
               {unlockedCount}/{ACHIEVEMENTS.length}
             </Text>
@@ -186,22 +205,31 @@ export default function ProfileScreen() {
           style={[styles.achBtn, { borderColor: C.primary + '55' }]}
           onPress={() => navigation.navigate('Achievements')}
         >
-          <Text style={styles.achBtnText}>🏆 Tüm başarımları gör →</Text>
+          <View style={styles.achBtnTextRow}>
+            <Icon emoji="🏆" size={14} color={C.gold} />
+            <Text style={styles.achBtnText}>Tüm başarımları gör →</Text>
+          </View>
         </PressableFX>
       </View>
 
       {/* Eylemler */}
       <View style={styles.actionsRow}>
         <Pressable style={[styles.actionBtn, { backgroundColor: C.primary }]} onPress={pickAndUpload}>
-          <Text style={styles.actionText}>
-            {photoBusy ? '⏳ Yükleniyor…' : photoUrl ? '📷 Fotoğrafı Değiştir' : '📷 Fotoğraf Yükle'}
-          </Text>
+          <View style={styles.actionTextRow}>
+            <Icon emoji={photoBusy ? '⏳' : '📷'} size={14} color={C.onPrimary} />
+            <Text style={[styles.actionText, { color: C.onPrimary }]}>
+              {photoBusy ? 'Yükleniyor…' : photoUrl ? 'Fotoğrafı Değiştir' : 'Fotoğraf Yükle'}
+            </Text>
+          </View>
         </Pressable>
         <Pressable
           style={[styles.actionBtn, { backgroundColor: C.surfaceLight }]}
           onPress={() => navigation.navigate('Shop')}
         >
-          <Text style={styles.actionText}>💍 Çerçeve</Text>
+          <View style={styles.actionTextRow}>
+            <Icon emoji="💍" size={14} color={C.primary} />
+            <Text style={styles.actionText}>Çerçeve</Text>
+          </View>
         </Pressable>
       </View>
       {photoUrl && (
@@ -235,9 +263,6 @@ function makeStyles(C) {
       alignItems: 'center',
       justifyContent: 'center',
     },
-    photoBadgeText: {
-      fontSize: 14,
-    },
     name: {
       color: C.text,
       fontSize: 22,
@@ -267,6 +292,16 @@ function makeStyles(C) {
       padding: 14,
       minHeight: 60,
       justifyContent: 'center',
+    },
+    bioHintRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      marginTop: 4,
+    },
+    bioHintText: {
+      color: C.textMuted,
+      fontSize: 11,
     },
     bioText: {
       color: C.text,
@@ -347,10 +382,7 @@ function makeStyles(C) {
       backgroundColor: C.surfaceLight,
       borderRadius: 12,
       paddingVertical: 12,
-      gap: 2,
-    },
-    summaryEmoji: {
-      fontSize: 16,
+      gap: 4,
     },
     summaryCellValue: {
       color: C.text,
@@ -369,6 +401,11 @@ function makeStyles(C) {
       borderWidth: 1,
       alignItems: 'center',
       paddingVertical: 10,
+    },
+    achBtnTextRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
     },
     achBtnPressed: {
       opacity: 0.7,
@@ -390,10 +427,15 @@ function makeStyles(C) {
       fontWeight: '700',
       color: C.text,
     },
+    statLabelRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+      marginTop: 2,
+    },
     statLabel: {
       fontSize: 11,
       color: C.textMuted,
-      marginTop: 2,
     },
     actionsRow: {
       flexDirection: 'row',
@@ -405,6 +447,11 @@ function makeStyles(C) {
       paddingVertical: 12,
       borderRadius: 14,
       alignItems: 'center',
+    },
+    actionTextRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
     },
     actionText: {
       color: C.text,

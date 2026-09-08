@@ -8,11 +8,13 @@
 // ============================================================
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { sendFriendRequest } from '../services/friendService';
 import { useTheme } from '../theme';
 import AvatarCircle from './AvatarCircle';
+import Icon from './ui/icons';
 import {
   bestStreak,
   buildDailyCompletions,
@@ -65,12 +67,12 @@ export default function PlayerProfileModal({ player, onClose }) {
       return;
     }
     if (res.state === 'already_friends') {
-      setSendResult({ ok: true, text: 'Zaten arkadaşsınız ✓' });
+      setSendResult({ ok: true, icon: '✅', text: 'Zaten arkadaşsınız' });
       await refreshServer();
     } else if (res.state === 'already_pending') {
-      setSendResult({ ok: true, text: 'İstek zaten beklemede ⏳' });
+      setSendResult({ ok: true, icon: '⏳', text: 'İstek zaten beklemede' });
     } else {
-      setSendResult({ ok: true, text: 'İstek gönderildi ✓' });
+      setSendResult({ ok: true, icon: '✅', text: 'İstek gönderildi' });
     }
   };
 
@@ -83,7 +85,7 @@ export default function PlayerProfileModal({ player, onClose }) {
           {/* Üst çubuk: kapatma butonu */}
           <View style={styles.topBar}>
             <Pressable onPress={onClose} hitSlop={12} style={styles.closeButton}>
-              <Text style={styles.closeText}>✕</Text>
+              <Ionicons name="close" size={20} color={C.textMuted} />
             </Pressable>
           </View>
 
@@ -102,14 +104,19 @@ export default function PlayerProfileModal({ player, onClose }) {
                 ringColor={C.primary}
               />
               <Text style={styles.name}>{player.name}</Text>
-              {isFriend && <Text style={styles.friendBadge}>Arkadaşın ✓</Text>}
+              {isFriend && (
+                <View style={styles.friendBadge}>
+                  <Icon emoji="✅" size={11} color={C.accent} />
+                  <Text style={styles.friendBadgeText}>Arkadaşın</Text>
+                </View>
+              )}
               <View style={styles.headerStats}>
                 <View style={styles.headerStat}>
-                  <Text style={styles.headerStatIcon}>🔥</Text>
+                  <Icon emoji="🔥" size={13} color={C.accent} />
                   <Text style={styles.headerStatValue}>{player.streak}</Text>
                 </View>
                 <View style={styles.headerStat}>
-                  <Text style={styles.headerStatIcon}>⚡</Text>
+                  <Icon emoji="⚡" size={13} color={C.primary} />
                   <Text style={styles.headerStatValue}>{player.totalXp} XP</Text>
                 </View>
               </View>
@@ -149,7 +156,10 @@ export default function PlayerProfileModal({ player, onClose }) {
             {/* Arkadaşlık isteği gönderme */}
             {isFriend ? (
               <View style={[styles.actionButton, styles.actionDone]}>
-                <Text style={styles.actionDoneText}>✓ Arkadaş listenizde</Text>
+                <View style={styles.actionContent}>
+                  <Icon emoji="✅" size={15} color={C.accent} />
+                  <Text style={styles.actionDoneText}>Arkadaş listenizde</Text>
+                </View>
               </View>
             ) : (
               <Pressable
@@ -159,10 +169,18 @@ export default function PlayerProfileModal({ player, onClose }) {
               >
                 {sending ? (
                   <ActivityIndicator size="small" color={C.onPrimary} />
+                ) : sendResult ? (
+                  <View style={styles.actionContent}>
+                    {sendResult.icon && sendResult.ok ? (
+                      <Icon emoji={sendResult.icon} size={15} color={C.onPrimary} />
+                    ) : null}
+                    <Text style={styles.actionText}>{sendResult.text}</Text>
+                  </View>
                 ) : (
-                  <Text style={styles.actionText}>
-                    {sendResult ? (sendResult.ok ? '✓ ' : '') + sendResult.text : '+ İstek Gönder'}
-                  </Text>
+                  <View style={styles.actionContent}>
+                    <Ionicons name="person-add" size={16} color={C.onPrimary} />
+                    <Text style={styles.actionText}>İstek Gönder</Text>
+                  </View>
                 )}
               </Pressable>
             )}
@@ -197,11 +215,6 @@ function makeStyles(C) {
       alignItems: 'center',
       justifyContent: 'center',
     },
-    closeText: {
-      color: C.textMuted,
-      fontSize: 15,
-      fontWeight: '700',
-    },
     content: {
       paddingHorizontal: 20,
       paddingBottom: 48,
@@ -228,14 +241,19 @@ function makeStyles(C) {
       fontWeight: '800',
     },
     friendBadge: {
-      color: C.accent,
-      fontSize: 12,
-      fontWeight: '800',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
       backgroundColor: C.accent + '22',
       paddingHorizontal: 10,
       paddingVertical: 4,
       borderRadius: 10,
       overflow: 'hidden',
+    },
+    friendBadgeText: {
+      color: C.accent,
+      fontSize: 12,
+      fontWeight: '800',
     },
     headerStats: {
       flexDirection: 'row',
@@ -245,9 +263,6 @@ function makeStyles(C) {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 4,
-    },
-    headerStatIcon: {
-      fontSize: 13,
     },
     headerStatValue: {
       color: C.textMuted,
@@ -271,6 +286,11 @@ function makeStyles(C) {
       backgroundColor: C.primary,
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    actionContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 7,
     },
     actionDisabled: {
       opacity: 0.6,
